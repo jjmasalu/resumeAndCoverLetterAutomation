@@ -26,7 +26,7 @@ export default function ChatIndexPage() {
       </div>
       <h2 className="text-base font-semibold text-text-primary mb-1.5">Start a conversation</h2>
       <p className="text-sm text-text-tertiary text-center max-w-xs mb-5">
-        Paste a job posting URL or describe the role you're targeting. I'll tailor your resume and write a cover letter.
+        Paste a job posting URL or describe the role you&apos;re targeting. I&apos;ll tailor your resume and write a cover letter.
       </p>
       <div className="flex gap-2">
         <button

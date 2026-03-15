@@ -1,8 +1,17 @@
 "use client";
 
-import { useLayoutEffect, useState, createContext, useContext } from "react";
+import { useRef, useSyncExternalStore, createContext, useContext, useCallback } from "react";
 
 type Theme = "dark" | "light";
+
+function getThemeSnapshot(): Theme {
+  if (typeof window === "undefined") return "dark";
+  return localStorage.getItem("theme") === "light" ? "light" : "dark";
+}
+
+function getServerSnapshot(): Theme {
+  return "dark";
+}
 
 const ThemeContext = createContext<{
   theme: Theme;
@@ -17,21 +26,26 @@ export function useTheme() {
 }
 
 export default function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<Theme>("dark");
+  const listenersRef = useRef<Set<() => void>>(new Set());
 
-  useLayoutEffect(() => {
-    const stored = localStorage.getItem("theme") as Theme | null;
-    const initial = stored === "light" ? "light" : "dark";
-    setTheme(initial);
-    document.documentElement.classList.toggle("light", initial === "light");
+  const subscribe = useCallback((listener: () => void) => {
+    listenersRef.current.add(listener);
+    return () => { listenersRef.current.delete(listener); };
   }, []);
 
-  const toggleTheme = () => {
+  const theme = useSyncExternalStore(subscribe, getThemeSnapshot, getServerSnapshot);
+
+  // Apply class on mount and when theme changes
+  if (typeof document !== "undefined") {
+    document.documentElement.classList.toggle("light", theme === "light");
+  }
+
+  const toggleTheme = useCallback(() => {
     const next = theme === "dark" ? "light" : "dark";
-    setTheme(next);
     localStorage.setItem("theme", next);
     document.documentElement.classList.toggle("light", next === "light");
-  };
+    listenersRef.current.forEach((l) => l());
+  }, [theme]);
 
   return (
     <ThemeContext.Provider value={{ theme, toggleTheme }}>

@@ -12,6 +12,11 @@ interface SearchOverlayProps {
 type ModeFilter = "all" | "job_to_resume" | "find_jobs";
 
 export default function SearchOverlay({ open, onClose }: SearchOverlayProps) {
+  if (!open) return null;
+  return <SearchOverlayInner onClose={onClose} />;
+}
+
+function SearchOverlayInner({ onClose }: { onClose: () => void }) {
   const { conversations, loading } = useApp();
   const [query, setQuery] = useState("");
   const [modeFilter, setModeFilter] = useState<ModeFilter>("all");
@@ -25,20 +30,20 @@ export default function SearchOverlay({ open, onClose }: SearchOverlayProps) {
     return matchesQuery && matchesMode;
   });
 
-  // Focus input on open
+  // Focus input on mount
   useEffect(() => {
-    if (open) {
-      setQuery("");
-      setSelectedIndex(0);
-      setModeFilter("all");
-      setTimeout(() => inputRef.current?.focus(), 50);
-    }
-  }, [open]);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }, []);
 
-  // Reset selection on filter change
-  useEffect(() => {
+  const handleQueryChange = (value: string) => {
+    setQuery(value);
     setSelectedIndex(0);
-  }, [query, modeFilter]);
+  };
+
+  const handleModeFilterChange = (value: ModeFilter) => {
+    setModeFilter(value);
+    setSelectedIndex(0);
+  };
 
   const handleSelect = useCallback(
     (conv: Conversation) => {
@@ -63,8 +68,6 @@ export default function SearchOverlay({ open, onClose }: SearchOverlayProps) {
     }
   };
 
-  if (!open) return null;
-
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]" onClick={onClose}>
       <div className="absolute inset-0 bg-black/60" />
@@ -82,7 +85,7 @@ export default function SearchOverlay({ open, onClose }: SearchOverlayProps) {
           <input
             ref={inputRef}
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => handleQueryChange(e.target.value)}
             placeholder="Search conversations..."
             className="flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-tertiary outline-none"
           />
@@ -94,7 +97,7 @@ export default function SearchOverlay({ open, onClose }: SearchOverlayProps) {
           {(["all", "job_to_resume", "find_jobs"] as ModeFilter[]).map((f) => (
             <button
               key={f}
-              onClick={() => setModeFilter(f)}
+              onClick={() => handleModeFilterChange(f)}
               className={`px-2.5 py-0.5 rounded-full text-[11px] transition ${
                 modeFilter === f
                   ? "bg-accent-muted text-accent border border-accent/20"

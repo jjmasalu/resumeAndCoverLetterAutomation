@@ -29,3 +29,12 @@ firebase-debug.log
 
 # Generated docs
 backend/output/
+
+# Playwright MCP
+.playwright-mcp/
+
+# Supabase Temp
+supabase/.temp
+
+# Superpowers
+.superpowers/
