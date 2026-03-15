@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { apiJson } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
 import ChatMessage from "@/components/ChatMessage";
@@ -26,12 +26,14 @@ interface DocumentEvent {
 
 export default function ChatPage() {
   const { id } = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [statuses, setStatuses] = useState<StatusEvent[]>([]);
   const [documents, setDocuments] = useState<DocumentEvent[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const initialSent = useRef(false);
 
   // Load existing messages and documents
   useEffect(() => {
@@ -42,6 +44,15 @@ export default function ChatPage() {
       })
       .catch(console.error);
   }, [id]);
+
+  // Auto-send initial message from landing page
+  useEffect(() => {
+    const initial = searchParams.get("initial");
+    if (initial && !initialSent.current) {
+      initialSent.current = true;
+      setInput(initial);
+    }
+  }, [searchParams]);
 
   // Auto-scroll
   useEffect(() => {
