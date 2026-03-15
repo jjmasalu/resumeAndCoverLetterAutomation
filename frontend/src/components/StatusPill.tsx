@@ -13,14 +13,16 @@ const TOOL_LABELS: Record<string, string> = {
 export default function StatusPill({ tool, state }: StatusPillProps) {
   const label = TOOL_LABELS[tool] || tool;
   return (
-    <div className="flex items-center gap-2 text-sm text-content-secondary mb-3">
-      {state === "running" ? (
-        <span className="inline-block w-2 h-2 bg-yellow-400 rounded-full animate-pulse" />
-      ) : (
-        <span className="inline-block w-2 h-2 bg-green-400 rounded-full" />
-      )}
-      {label}
-      {state === "running" ? "..." : " — done"}
+    <div className="flex items-center gap-2 text-xs text-text-secondary mb-3 ml-9">
+      <span
+        className={`inline-block w-1.5 h-1.5 rounded-full bg-accent ${
+          state === "running" ? "animate-pulse" : ""
+        }`}
+      />
+      <span>
+        {label}
+        {state === "running" ? "..." : " — done"}
+      </span>
     </div>
   );
 }
