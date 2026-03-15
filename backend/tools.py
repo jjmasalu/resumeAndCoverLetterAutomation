@@ -3,14 +3,14 @@ import uuid
 import io
 from datetime import datetime, timezone
 from tavily import TavilyClient
-from firecrawl import FirecrawlApp
+from firecrawl import Firecrawl
 from docxtpl import DocxTemplate
 from config import settings
 from db import supabase
 
 
 tavily_client = TavilyClient(api_key=settings.tavily_api_key)
-firecrawl_client = FirecrawlApp(api_key=settings.firecrawl_api_key)
+firecrawl_client = Firecrawl(api_key=settings.firecrawl_api_key)
 
 TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
 
@@ -41,8 +41,8 @@ async def search_jobs(query: str, location: str | None = None) -> list[dict]:
 async def scrape_job(url: str) -> dict:
     """Scrape a job posting URL using Firecrawl."""
     try:
-        result = firecrawl_client.scrape_url(url, params={"formats": ["markdown"]})
-        markdown = getattr(result, "markdown", "") or ""
+        result = firecrawl_client.scrape(url, formats=["markdown"])
+        markdown = result.markdown or ""
         return {
             "description_md": markdown,
             "url": url,
