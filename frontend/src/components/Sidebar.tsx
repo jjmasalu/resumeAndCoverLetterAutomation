@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useApp } from "./AppContext";
-import { apiJson } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
 
 const BRAND_NAME = "Resume AI";
@@ -11,7 +10,6 @@ const MAX_RECENT = 8;
 
 export default function Sidebar({ onOpenSearch }: { onOpenSearch?: () => void }) {
   const { conversations, loading, error, refreshConversations } = useApp();
-  const [mode, setMode] = useState<"job_to_resume" | "find_jobs">("job_to_resume");
   const [userEmail, setUserEmail] = useState<string>("");
   const [menuOpen, setMenuOpen] = useState(false);
   const router = useRouter();
@@ -27,13 +25,8 @@ export default function Sidebar({ onOpenSearch }: { onOpenSearch?: () => void })
   const recent = conversations.slice(0, MAX_RECENT);
   const hasMore = conversations.length > MAX_RECENT;
 
-  const handleNew = async () => {
-    const conv = await apiJson<{ id: string }>("/conversations", {
-      method: "POST",
-      body: JSON.stringify({ mode }),
-    });
-    await refreshConversations();
-    router.push(`/chat/${conv.id}`);
+  const handleNew = () => {
+    router.push("/chat");
   };
 
   const handleSignOut = async () => {
@@ -60,30 +53,6 @@ export default function Sidebar({ onOpenSearch }: { onOpenSearch?: () => void })
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-secondary">
             <path d="M12 5v14M5 12h14" />
           </svg>
-        </button>
-      </div>
-
-      {/* Mode selector */}
-      <div className="px-3 pb-3 flex gap-1">
-        <button
-          onClick={() => setMode("job_to_resume")}
-          className={`flex-1 py-1.5 text-[11px] font-medium rounded-md transition ${
-            mode === "job_to_resume"
-              ? "bg-accent text-white"
-              : "bg-bg-tertiary text-text-secondary hover:text-text-primary"
-          }`}
-        >
-          Job → Resume
-        </button>
-        <button
-          onClick={() => setMode("find_jobs")}
-          className={`flex-1 py-1.5 text-[11px] font-medium rounded-md transition ${
-            mode === "find_jobs"
-              ? "bg-accent text-white"
-              : "bg-bg-tertiary text-text-secondary hover:text-text-primary"
-          }`}
-        >
-          Find Jobs
         </button>
       </div>
 
