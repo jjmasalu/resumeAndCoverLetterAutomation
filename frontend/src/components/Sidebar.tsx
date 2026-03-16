@@ -13,6 +13,7 @@ export default function Sidebar({ onOpenSearch }: { onOpenSearch?: () => void })
   const { conversations, loading, error, refreshConversations } = useApp();
   const [mode, setMode] = useState<"job_to_resume" | "find_jobs">("job_to_resume");
   const [userEmail, setUserEmail] = useState<string>("");
+  const [menuOpen, setMenuOpen] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
 
@@ -121,14 +122,16 @@ export default function Sidebar({ onOpenSearch }: { onOpenSearch?: () => void })
               {c.title}
             </button>
           ))}
-        {hasMore && (
-          <button
-            onClick={() => router.push("/history")}
-            className="w-full text-left px-2.5 py-1.5 text-xs text-accent hover:underline"
-          >
-            View all →
-          </button>
-        )}
+        <button
+          onClick={() => router.push("/history")}
+          className={`w-full text-left px-2.5 py-1.5 rounded-md text-xs transition ${
+            pathname === "/history"
+              ? "bg-bg-tertiary text-text-primary"
+              : "text-text-tertiary hover:bg-bg-tertiary hover:text-text-primary"
+          }`}
+        >
+          {hasMore ? "View all →" : "History"}
+        </button>
       </div>
 
       {/* Search trigger + User */}
@@ -147,18 +150,34 @@ export default function Sidebar({ onOpenSearch }: { onOpenSearch?: () => void })
           <kbd className="text-[10px] bg-bg-secondary px-1.5 py-0.5 rounded text-text-tertiary">⌘K</kbd>
         </button>
 
-        <div className="flex items-center gap-2 px-1">
+        <div className="flex items-center gap-2 px-1 relative">
           <div className="w-6 h-6 rounded-full bg-accent flex items-center justify-center text-[10px] font-semibold text-white flex-shrink-0">
             {userEmail ? userEmail[0].toUpperCase() : "U"}
           </div>
           <span className="text-xs text-text-secondary flex-1 truncate">{userEmail || "User"}</span>
-          <button onClick={handleSignOut} className="text-text-tertiary hover:text-text-secondary transition">
+          <button
+            onClick={() => setMenuOpen(!menuOpen)}
+            className="text-text-tertiary hover:text-text-secondary transition"
+          >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="1" />
               <circle cx="12" cy="5" r="1" />
               <circle cx="12" cy="19" r="1" />
             </svg>
           </button>
+          {menuOpen && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+              <div className="absolute bottom-full right-0 mb-1 w-36 bg-bg-secondary border border-border rounded-lg shadow-lg z-50 py-1">
+                <button
+                  onClick={() => { setMenuOpen(false); handleSignOut(); }}
+                  className="w-full text-left px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-tertiary hover:text-text-primary transition"
+                >
+                  Sign out
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </aside>

@@ -2,20 +2,20 @@
 
 ## Bugs to Fix
 
-### 1. Document type missing from download card
-The `generate_document` tool returns `{document_id, download_url}` but doesn't include `doc_type`. The frontend `DownloadCard` defaults to "Cover Letter" because it never receives the type. Fix: include `doc_type` in the tool response in `tools.py`.
+### 1. ~~Document type missing from download card~~ (Fixed)
+Fixed in UI redesign — DownloadCard now receives `doc_type` from the document SSE event.
 
-### 2. Long URLs overflow chat bubbles
-When the AI pastes a signed download URL into the message, it overflows the chat bubble since the URL has no break opportunities. Fix: add `break-all` or `overflow-wrap: anywhere` to `ChatMessage.tsx`.
+### 2. ~~Long URLs overflow chat bubbles~~ (Fixed)
+Fixed in UI redesign — `overflow-wrap: anywhere` added to ChatMessage.
 
 ### 3. AI dumps raw download URLs in messages
-The AI pastes the full Supabase signed URL (with JWT token) into the chat message text. This is redundant since the `DownloadCard` component already provides the download link. Fix: either strip URLs from AI responses or instruct the system prompt to not include download links in its text.
+The AI pastes the full Supabase signed URL (with JWT token) into the chat message text. This is redundant since the `DownloadCard` component already provides the download link. Fix: instruct the system prompt to not include download links in its text.
 
-### 4. Status pills and download cards lost on page reload
-`statuses` and `documents` are ephemeral SSE state — when navigating away and back (or loading from history), they're gone. Fix: either persist document events in the DB (e.g., link `generated_documents` to messages) or re-derive them from the conversation's `generated_documents` records on load.
+### 4. ~~Status pills and download cards lost on page reload~~ (Partially fixed)
+Documents now persist via the conversation API endpoint (`/conversations/{id}` returns `documents`). Status pills are still ephemeral SSE state and only show during active streaming.
 
-### 5. All conversations titled "New conversation"
-Conversation titles are never updated from the default. Fix: after the first AI response or tool call, auto-generate a title (e.g., use the job title or first user message snippet) and update the `conversations.title` field.
+### 5. ~~All conversations titled "New conversation"~~ (Fixed)
+Fixed — auto-titling implemented in a prior commit.
 
 ---
 
@@ -45,11 +45,11 @@ Let users generate multiple resume versions for the same job with different emph
 ### 10. PDF export
 Add PDF export alongside .docx. Many job applications require PDF. Can be done via `python-docx` → PDF conversion or a dedicated library like WeasyPrint.
 
-### 11. Markdown rendering in chat
-AI responses should support markdown (bold, lists, links). Currently rendered as plain text via `whitespace-pre-wrap`. Use a markdown renderer like `react-markdown`.
+### 11. ~~Markdown rendering in chat~~ (Fixed)
+Fixed in UI redesign — `react-markdown` with theme-aware prose styling in ChatMessage.
 
-### 12. Conversation search and filtering
-The history page shows all conversations with identical titles. Add search, date filtering, and tags/labels (by job title, company, etc.).
+### 12. ~~Conversation search and filtering~~ (Fixed)
+Fixed in UI redesign — SearchOverlay (Cmd+K) with mode filters, plus History page with mode and status filter pills.
 
 ---
 
