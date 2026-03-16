@@ -2,14 +2,13 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { apiJson } from "@/lib/api";
+import { apiJson, apiUpload } from "@/lib/api";
 import { useApp } from "@/components/AppContext";
 import { createClient } from "@/lib/supabase/client";
 import ChatMessage from "@/components/ChatMessage";
 import StatusPill from "@/components/StatusPill";
 import DownloadCard from "@/components/DownloadCard";
 import JobCard from "@/components/JobCard";
-import { apiUpload } from "@/lib/api";
 
 interface Message {
   role: "user" | "assistant";

@@ -221,7 +221,7 @@ async def _execute_tool(
         )
     elif name == "present_job_results":
         # Passthrough — stream_chat() handles SSE emission
-        return args, None
+        return {"results": args.get("results", [])}, None
     else:
         result = {"error": f"Unknown tool: {name}"}
 

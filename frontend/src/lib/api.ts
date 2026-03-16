@@ -42,6 +42,10 @@ export async function apiUpload<T>(path: string, file: File): Promise<T> {
     data: { session },
   } = await supabase.auth.getSession();
 
+  if (!session?.access_token) {
+    throw new Error("Not authenticated");
+  }
+
   const form = new FormData();
   form.append("file", file);
 
