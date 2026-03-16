@@ -23,3 +23,15 @@ create policy "Users can read own files"
 create policy "Users can insert own files"
   on conversation_files for insert
   with check (user_id = auth.uid());
+
+-- Storage bucket for user-uploaded files (resumes, etc.)
+insert into storage.buckets (id, name, public)
+values ('uploads', 'uploads', false);
+
+create policy "Users can upload own files"
+  on storage.objects for insert
+  with check (bucket_id = 'uploads' and auth.uid()::text = (storage.foldername(name))[1]);
+
+create policy "Users can read own uploads"
+  on storage.objects for select
+  using (bucket_id = 'uploads' and auth.uid()::text = (storage.foldername(name))[1]);
