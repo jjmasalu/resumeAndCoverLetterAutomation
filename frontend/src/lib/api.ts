@@ -35,3 +35,25 @@ export async function apiJson<T = unknown>(
   const res = await apiFetch(path, options);
   return res.json();
 }
+
+export async function apiUpload<T>(path: string, file: File): Promise<T> {
+  const supabase = createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  const form = new FormData();
+  form.append("file", file);
+
+  const res = await fetch(`${API_URL}${path}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${session?.access_token}` },
+    body: form,
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `Upload failed: ${res.status}`);
+  }
+  return res.json();
+}
