@@ -157,7 +157,7 @@ function ChatIndexContent() {
       <div className="border-t border-border px-5 py-3">
         <div className="max-w-3xl mx-auto">
           <div
-            className={`flex items-end gap-2 bg-bg-secondary border border-border rounded-xl px-3.5 py-3 transition ${
+            className={`flex items-center gap-2 bg-bg-secondary border border-border rounded-xl px-3.5 py-2.5 transition ${
               sending ? "opacity-50" : ""
             }`}
           >

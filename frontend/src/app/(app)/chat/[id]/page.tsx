@@ -60,8 +60,14 @@ export default function ChatPage() {
     return () => setActiveConversation(null);
   }, [id, conversations, setActiveConversation]);
 
-  // Load existing messages and documents
+  // Load existing messages and documents (skip if auto-sending initial message)
   useEffect(() => {
+    const hasInitial = searchParams.get("initial");
+    if (hasInitial) {
+      // Brand-new conversation via redirect — no messages to fetch
+      setLoadingMessages(false);
+      return;
+    }
     setLoadingMessages(true);
     apiJson<{ messages: Message[]; documents?: DocumentEvent[] }>(`/conversations/${id}`)
       .then((data) => {
@@ -70,7 +76,7 @@ export default function ChatPage() {
       })
       .catch(console.error)
       .finally(() => setLoadingMessages(false));
-  }, [id]);
+  }, [id, searchParams]);
 
   // Core send logic — accepts message directly, no dependency on input state
   const doSend = useCallback(async (userMsg: string) => {
@@ -290,7 +296,7 @@ export default function ChatPage() {
       <div className="border-t border-border px-5 py-3">
         <div className="max-w-3xl mx-auto">
           <div
-            className={`flex items-end gap-2 bg-bg-secondary border border-border rounded-xl px-3.5 py-3 transition ${
+            className={`flex items-center gap-2 bg-bg-secondary border border-border rounded-xl px-3.5 py-2.5 transition ${
               streaming ? "opacity-50" : ""
             }`}
           >
