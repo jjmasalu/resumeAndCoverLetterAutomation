@@ -1,3 +1,4 @@
+import logging
 import tempfile
 import os
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File
@@ -14,6 +15,14 @@ from models import (
 )
 from chat import stream_chat, gemini_client
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)-5s [%(name)s] %(message)s",
+    datefmt="%H:%M:%S",
+)
+
+logger = logging.getLogger("api")
 app = FastAPI(title="Resume & Cover Letter AI", version="0.1.0")
 
 # CORS
@@ -170,8 +179,11 @@ async def upload_file(
     if not conv.data:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
+    logger.info("upload conv=%s file=%s type=%s", conversation_id[:8], file.filename, file.content_type)
+
     # Validate file type
     if not file.content_type or file.content_type not in ALLOWED_MIME_TYPES:
+        logger.warning("upload rejected: unsupported type %s", file.content_type)
         raise HTTPException(status_code=400, detail=f"Unsupported file type: {file.content_type}. Supported: PDF, DOCX, PNG, JPG")
 
     # Read file bytes
@@ -179,7 +191,10 @@ async def upload_file(
 
     # Validate file size
     if len(file_bytes) > MAX_FILE_SIZE:
+        logger.warning("upload rejected: file too large (%d bytes)", len(file_bytes))
         raise HTTPException(status_code=400, detail="File must be under 10MB")
+
+    logger.info("upload size=%d bytes, uploading to storage...", len(file_bytes))
 
     # Upload to Supabase Storage
     storage_path = f"{user_id}/{conversation_id}/{file.filename}"
@@ -190,15 +205,19 @@ async def upload_file(
             {"content-type": file.content_type},
         )
     except Exception as e:
+        logger.error("storage upload failed: %s", e)
         raise HTTPException(status_code=500, detail=f"Storage upload failed: {str(e)}")
 
     # Upload to Gemini Files API
+    logger.info("upload uploading to Gemini Files API...")
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as tmp:
             tmp.write(file_bytes)
             tmp_path = tmp.name
         gemini_file = gemini_client.files.upload(file=tmp_path)
+        logger.info("upload gemini_uri=%s", gemini_file.uri)
     except Exception as e:
+        logger.error("gemini upload failed: %s", e)
         raise HTTPException(status_code=500, detail=f"Gemini Files API upload failed: {str(e)}")
     finally:
         if "tmp_path" in locals():
