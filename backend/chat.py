@@ -187,12 +187,16 @@ async def _execute_tool(
     """Execute a Gemini function call and return result + optional updated job_id."""
     name = function_call.name
     args = dict(function_call.args) if function_call.args else {}
+    logger.info("tool_call name=%s args=%s", name, {k: str(v)[:80] for k, v in args.items()})
 
     if name == "search_jobs":
         result = await tools.search_jobs(**args)
+        logger.info("tool_result search_jobs results=%d", len(result) if isinstance(result, list) else 0)
     elif name == "scrape_job":
         result = await tools.scrape_job(**args)
         if "error" not in result:
+            md_len = len(result.get("description_md", ""))
+            logger.info("tool_result scrape_job md_len=%d", md_len)
             job_data = supabase.table("jobs").insert({
                 "conversation_id": conversation_id,
                 "user_id": user_id,
@@ -202,9 +206,13 @@ async def _execute_tool(
             }).execute()
             if job_data.data:
                 job_id = job_data.data[0]["id"]
+                logger.info("tool_result scrape_job saved job_id=%s", job_id[:8])
+        else:
+            logger.warning("tool_result scrape_job error=%s", result["error"])
     elif name == "generate_document":
         if not job_id:
             result = {"error": "No job has been scraped yet in this conversation."}
+            logger.warning("tool_result generate_document no job_id")
         else:
             result = await tools.generate_document(
                 doc_type=args.get("doc_type", "resume"),
@@ -212,6 +220,10 @@ async def _execute_tool(
                 user_id=user_id,
                 job_id=job_id,
             )
+            if "error" in result:
+                logger.error("tool_result generate_document error=%s", result["error"])
+            else:
+                logger.info("tool_result generate_document doc_id=%s", result.get("document_id", "?")[:8])
     elif name == "save_user_context":
         result = await tools.save_user_context(
             user_id=user_id,
@@ -219,11 +231,14 @@ async def _execute_tool(
             content=args.get("content", {}),
             conversation_id=conversation_id,
         )
+        logger.info("tool_result save_user_context category=%s", args.get("category"))
     elif name == "present_job_results":
-        # Passthrough — stream_chat() handles SSE emission
+        count = len(args.get("results", []))
+        logger.info("tool_result present_job_results count=%d", count)
         return {"results": args.get("results", [])}, job_id
     else:
         result = {"error": f"Unknown tool: {name}"}
+        logger.warning("tool_result unknown tool=%s", name)
 
     return result, job_id
 
@@ -235,6 +250,7 @@ async def stream_chat(
     mode: str,
 ) -> AsyncGenerator[ServerSentEvent, None]:
     """Stream a chat response with function calling via SSE."""
+    logger.info("stream conv=%s mode=%s msg=%s", conversation_id[:8], mode, user_message[:60])
 
     # Save user message
     supabase.table("messages").insert({
@@ -248,6 +264,7 @@ async def stream_chat(
 
     # Build history (includes the just-saved user message)
     history = _build_history(conversation_id)
+    logger.info("stream history=%d messages, file=%s", len(history), bool(file_record))
 
     # Build system prompt based on mode
     if mode == "job_to_resume":
@@ -256,6 +273,7 @@ async def stream_chat(
         # history has 1 entry = this is the first exchange
         if file_record and len(history) <= 1:
             system_prompt = FIND_JOBS_WITH_FILE_PROMPT
+            logger.info("stream using FIND_JOBS_WITH_FILE prompt")
         else:
             system_prompt = FIND_JOBS_PROMPT
     else:
@@ -267,17 +285,16 @@ async def stream_chat(
     # If file exists and this is the first exchange, replace the user message
     # in history with a version that includes the file attachment
     if file_record and len(history) <= 1 and history:
-        # Pop the text-only user message that _build_history() loaded
         history.pop()
-        # Re-add with file part included
         user_parts = [
             types.Part.from_uri(
                 file_uri=file_record["gemini_file_uri"],
                 mime_type=file_record["mime_type"],
             ),
-            types.Part.from_text(user_message),
+            types.Part.from_text(text=user_message),
         ]
         history.append(types.Content(role="user", parts=user_parts))
+        logger.info("stream attached file uri=%s", file_record["gemini_file_uri"])
 
     # Track job_id for document generation
     existing_jobs = supabase.table("jobs").select("id").eq("conversation_id", conversation_id).order("created_at", desc=True).limit(1).execute()
@@ -291,6 +308,7 @@ async def stream_chat(
         has_function_call = False
         function_call_content = None
 
+        logger.info("stream round=%d calling Gemini...", tool_round + 1)
         try:
             response_stream = gemini_client.models.generate_content_stream(
                 model=MODEL,
@@ -302,7 +320,7 @@ async def stream_chat(
                 ),
             )
         except Exception as e:
-            logger.error(f"Gemini API error: {e}")
+            logger.error("gemini API error: %s", e)
             yield ServerSentEvent(
                 data=json.dumps({"message": f"AI error: {str(e)}"}),
                 event="error",
@@ -310,7 +328,7 @@ async def stream_chat(
             break
 
         for chunk in response_stream:
-            if not chunk.candidates or not chunk.candidates[0].content.parts:
+            if not chunk.candidates or not chunk.candidates[0].content or not chunk.candidates[0].content.parts:
                 continue
 
             for part in chunk.candidates[0].content.parts:
@@ -371,6 +389,7 @@ async def stream_chat(
 
     # Save assistant response
     if full_response:
+        logger.info("stream done conv=%s response=%d chars", conversation_id[:8], len(full_response))
         supabase.table("messages").insert({
             "conversation_id": conversation_id,
             "role": "assistant",
@@ -384,3 +403,5 @@ async def stream_chat(
             if len(user_message) > 80:
                 title = title.rsplit(" ", 1)[0] + "..."
             supabase.table("conversations").update({"title": title}).eq("id", conversation_id).execute()
+    else:
+        logger.warning("stream done conv=%s NO response text", conversation_id[:8])
