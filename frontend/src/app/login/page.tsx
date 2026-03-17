@@ -1,13 +1,25 @@
 "use client";
 
+import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { signInAction, signUpAction } from "@/app/actions/auth";
 
 const BRAND_NAME = "Resume AI";
 
 export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginContent />
+    </Suspense>
+  );
+}
+
+function LoginContent() {
   const supabase = createClient();
+  const searchParams = useSearchParams();
+  const returnTo = searchParams.get("returnTo") || "/chat";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -20,8 +32,8 @@ export default function LoginPage() {
     setError("");
 
     const result = isSignUp
-      ? await signUpAction(email, password)
-      : await signInAction(email, password);
+      ? await signUpAction(email, password, returnTo)
+      : await signInAction(email, password, returnTo);
 
     if (result?.error) {
       setError(result.error);

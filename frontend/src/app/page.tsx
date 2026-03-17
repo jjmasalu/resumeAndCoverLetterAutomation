@@ -32,7 +32,7 @@ export default function LandingPage() {
     if (!input.trim()) return;
     setLoading(true);
     try {
-      if (!(await ensureAuth())) return;
+      if (!(await ensureAuth("/chat"))) return;
       const conv = await apiJson<{ id: string }>("/conversations", {
         method: "POST",
         body: JSON.stringify({ mode: "job_to_resume" }),
