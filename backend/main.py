@@ -116,8 +116,8 @@ async def get_profile(user_id: str = Depends(get_current_user)):
     return {
         "profile": profile.data,
         "user_context": user_context.data,
-        "files": files_with_urls,
-        "documents": docs_with_urls,
+        "uploaded_files": files_with_urls,
+        "generated_documents": docs_with_urls,
     }
 
 
@@ -241,7 +241,7 @@ async def get_conversation(
         .maybe_single()
         .execute()
     )
-    if not conv.data:
+    if not conv or not conv.data:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
     messages = (
@@ -370,7 +370,7 @@ async def bulk_delete_conversations(
         supabase.table("conversations").delete().eq("id", cid).execute()
         deleted += 1
 
-    return {"deleted": deleted}
+    return {"deleted_count": deleted}
 
 
 @app.post("/conversations/{conversation_id}/messages")
