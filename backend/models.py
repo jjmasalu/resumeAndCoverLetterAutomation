@@ -54,3 +54,15 @@ class UploadFileResponse(BaseModel):
     file_id: str
     filename: str
     gemini_file_uri: str
+
+
+class UpdateProfileRequest(BaseModel):
+    full_name: str
+
+
+class UpdateUserContextRequest(BaseModel):
+    content: dict
+
+
+class BulkDeleteConversationsRequest(BaseModel):
+    conversation_ids: list[str]
