@@ -282,6 +282,97 @@ async def get_conversation(
     return {**conv.data, "messages": messages.data, "documents": docs}
 
 
+def _delete_conversation_storage(conversation_id: str):
+    """Remove storage bucket files tied to a conversation before DB cascade delete."""
+    # Remove uploaded files from "uploads" bucket
+    uploads = (
+        supabase.table("conversation_files")
+        .select("storage_path")
+        .eq("conversation_id", conversation_id)
+        .execute()
+    )
+    if uploads.data:
+        paths = [f["storage_path"] for f in uploads.data]
+        try:
+            supabase.storage.from_("uploads").remove(paths)
+        except Exception as e:
+            logger.warning("Failed to remove upload files for conv %s: %s", conversation_id[:8], e)
+
+    # Remove generated documents from "documents" bucket
+    jobs = (
+        supabase.table("jobs")
+        .select("id")
+        .eq("conversation_id", conversation_id)
+        .execute()
+    )
+    if jobs.data:
+        job_ids = [j["id"] for j in jobs.data]
+        for job_id in job_ids:
+            docs = (
+                supabase.table("generated_documents")
+                .select("file_url")
+                .eq("job_id", job_id)
+                .execute()
+            )
+            if docs.data:
+                doc_paths = [d["file_url"] for d in docs.data]
+                try:
+                    supabase.storage.from_("documents").remove(doc_paths)
+                except Exception as e:
+                    logger.warning("Failed to remove doc files for conv %s: %s", conversation_id[:8], e)
+
+
+@app.delete("/conversations/{conversation_id}")
+async def delete_conversation(
+    conversation_id: str,
+    user_id: str = Depends(get_current_user),
+):
+    # Verify ownership
+    conv = (
+        supabase.table("conversations")
+        .select("id")
+        .eq("id", conversation_id)
+        .eq("user_id", user_id)
+        .maybe_single()
+        .execute()
+    )
+    if not conv.data:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    _delete_conversation_storage(conversation_id)
+    supabase.table("conversations").delete().eq("id", conversation_id).execute()
+    return {"status": "deleted"}
+
+
+@app.post("/conversations/bulk-delete")
+async def bulk_delete_conversations(
+    body: BulkDeleteConversationsRequest,
+    user_id: str = Depends(get_current_user),
+):
+    if not body.conversation_ids:
+        return {"deleted": 0}
+
+    # Verify all conversations belong to user
+    convs = (
+        supabase.table("conversations")
+        .select("id")
+        .eq("user_id", user_id)
+        .in_("id", body.conversation_ids)
+        .execute()
+    )
+    found_ids = {c["id"] for c in convs.data}
+
+    deleted = 0
+    for cid in body.conversation_ids:
+        if cid not in found_ids:
+            continue
+        _delete_conversation_storage(cid)
+        supabase.table("conversations").delete().eq("id", cid).execute()
+        deleted += 1
+
+    return {"deleted": deleted}
+
+
 @app.post("/conversations/{conversation_id}/messages")
 async def send_message(
     conversation_id: str,
