@@ -16,6 +16,8 @@ function TopBar() {
 
   if (pathname === "/history") {
     title = "All Conversations";
+  } else if (pathname === "/profile") {
+    title = "Profile";
   } else if (activeConversation) {
     title = activeConversation.title;
     status = activeConversation.status;
