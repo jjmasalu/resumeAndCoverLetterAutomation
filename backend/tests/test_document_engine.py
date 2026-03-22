@@ -22,6 +22,9 @@ def test_build_document_plan_respects_requested_theme():
     assert plan.theme_id == "technical_compact"
     assert plan.density == "compact"
     assert plan.page_budget == 1
+    assert plan.verification["status"] == "passed"
+    assert plan.repair_history == []
+    assert plan.attempt_count == 1
 
 
 def test_build_document_plan_chooses_compact_theme_for_dense_resume():
@@ -47,8 +50,41 @@ def test_build_document_plan_chooses_compact_theme_for_dense_resume():
     )
 
     assert plan.theme_id == "technical_compact"
-    assert plan.layout_metrics["experience_count"] == 4
-    assert plan.layout_metrics["bullet_count"] == 8
+    assert plan.verification["status"] == "passed"
+    assert plan.layout_metrics["experience_count"] <= 4
+    assert plan.layout_metrics["bullet_count"] <= 8
+
+
+def test_build_document_plan_repairs_dense_resume_until_within_budget():
+    plan = document_engine.build_document_plan(
+        "resume",
+        {
+            "name": "Avery Carter",
+            "title": "Senior Backend Engineer",
+            "theme_id": "classic_professional",
+            "summary": " ".join(["Built high-volume APIs, ingestion systems, and internal developer platforms."] * 12),
+            "skills": {
+                "Languages": ["Python", "TypeScript", "SQL", "Go", "JavaScript"],
+                "Cloud": ["AWS", "GCP", "Azure", "Cloud Run", "Kubernetes"],
+                "Data": ["PostgreSQL", "Redis", "MongoDB", "BigQuery"],
+                "Other": ["FastAPI", "Flask", "CI/CD", "Observability", "Terraform"],
+            },
+            "education": "BSc Computer Science, Memorial University (2021-2025 | GPA 3.83)",
+            "experiences": [
+                {"company": "Nexa Labs", "role": "Senior Backend Engineer", "dates": "2023 to Present", "bullets": ["Built resilient APIs for document generation and matching systems.", "Led backend reliability work across storage, auth, and orchestration.", "Improved latency and observability."]},
+                {"company": "Orbit Systems", "role": "Platform Engineer", "dates": "2021 to 2023", "bullets": ["Built Python services for internal tools.", "Improved CI/CD and deployment automation.", "Partnered with product teams."]},
+                {"company": "Northwind", "role": "Software Engineer", "dates": "2020 to 2021", "bullets": ["Implemented APIs and data pipelines.", "Improved database design.", "Supported production operations."]},
+                {"company": "Acme", "role": "Engineer", "dates": "2019 to 2020", "bullets": ["Built backend features.", "Maintained integrations.", "Wrote tests and docs."]},
+            ],
+        },
+    )
+
+    assert plan.theme_id == "technical_compact"
+    assert plan.verification["status"] == "passed"
+    assert plan.attempt_count > 1
+    assert [item["action"] for item in plan.repair_history]
+    assert plan.layout_metrics["bullet_count"] <= 4
+    assert plan.layout_metrics["experience_count"] <= 4
 
 
 def test_build_document_plan_compacts_cover_letter():
@@ -72,6 +108,29 @@ def test_build_document_plan_compacts_cover_letter():
     assert plan.layout_metrics["paragraph_count"] == 4
     assert plan.normalized_sections["paragraphs"][0] == "Sentence one. Sentence two. Sentence three."
     assert plan.normalized_sections["paragraphs"][-1] == "Thank you for your time. I appreciate your consideration."
+
+
+def test_build_document_plan_repairs_dense_cover_letter_until_within_budget():
+    plan = document_engine.build_document_plan(
+        "cover_letter",
+        {
+            "name": "Avery Carter",
+            "company": "Boam AI",
+            "role": "Backend Engineer",
+            "theme_id": "classic_professional",
+            "paragraphs": [
+                " ".join(["I build backend systems that support job matching, document generation, and production workflows."] * 4),
+                " ".join(["At Nexa Labs, I led API platform work, database integrations, and reliability improvements across multiple services."] * 4),
+                " ".join(["I would bring strong Python, FastAPI, PostgreSQL, and infrastructure experience to this role while staying close to product delivery needs."] * 4),
+                " ".join(["Thank you for your time and consideration. I would welcome the opportunity to discuss how I could contribute."] * 3),
+            ],
+        },
+    )
+
+    assert plan.verification["status"] == "passed"
+    assert plan.attempt_count > 1
+    assert [item["action"] for item in plan.repair_history]
+    assert len(plan.normalized_sections["paragraphs"]) <= 3
 
 
 def test_render_document_outputs_expected_cover_letter_structure():

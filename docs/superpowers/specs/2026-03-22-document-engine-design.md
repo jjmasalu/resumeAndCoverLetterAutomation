@@ -136,6 +136,8 @@ Implemented now:
   - resume skills
   - experience count and bullets
   - one-page cover-letter paragraph budgets
+- heuristic verification metadata attached to each generated `DocumentPlan`
+- bounded deterministic repair loop with observable repair history
 - deterministic DOCX composition using safe flow-layout primitives
 - local render verification tooling on macOS via LibreOffice -> PDF -> PNG
 - backend contract that allows the model to select only approved `theme_id` values
@@ -143,13 +145,14 @@ Implemented now:
 Not implemented yet:
 
 - persisted intermediate layout model beyond the current plan payload
-- automated layout verification gates that can fail generation
-- automatic repair / retry loop
+- backend-side rendered PDF/PNG verification during generation
+- hard generation failure gates tied to rendered verification output
 - canonical PDF-first rendering
 - broader audited theme catalog and variants
 
 This means the engine has moved from design-only into an initial controlled
-production baseline, but verification and repair are still the next major phase.
+production baseline. Planning, heuristic verification, and bounded repair are in
+place; rendered verification and richer theme coverage are the next major phase.
 
 ## Engine Architecture
 
