@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from enum import Enum
 
 
@@ -23,6 +23,7 @@ class CreateConversationRequest(BaseModel):
 
 class SendMessageRequest(BaseModel):
     content: str
+    attachment_file_ids: list[str] = Field(default_factory=list)
 
 
 class VerifyTeamAccessRequest(BaseModel):

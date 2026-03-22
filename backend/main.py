@@ -455,6 +455,7 @@ async def send_message(
             user_id=user_id,
             user_message=body.content,
             mode=conv.data["mode"],
+            attachment_file_ids=body.attachment_file_ids,
         ):
             yield event
 
@@ -501,20 +502,25 @@ async def upload_file(
         logger.error("storage upload failed: %s", e)
         raise HTTPException(status_code=500, detail=f"Storage upload failed: {str(e)}")
 
-    # Upload to Gemini Files API
-    logger.info("upload uploading to Gemini Files API...")
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as tmp:
-            tmp.write(file_bytes)
-            tmp_path = tmp.name
-        gemini_file = gemini_client.files.upload(file=tmp_path)
-        logger.info("upload gemini_uri=%s", gemini_file.uri)
-    except Exception as e:
-        logger.error("gemini upload failed: %s", e)
-        raise HTTPException(status_code=500, detail=f"Gemini Files API upload failed: {str(e)}")
-    finally:
-        if "tmp_path" in locals():
-            os.unlink(tmp_path)
+    gemini_file_uri = ""
+    if file.content_type != "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+        # Upload Gemini-supported file types for native multimodal prompting.
+        logger.info("upload uploading to Gemini Files API...")
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as tmp:
+                tmp.write(file_bytes)
+                tmp_path = tmp.name
+            gemini_file = gemini_client.files.upload(file=tmp_path)
+            gemini_file_uri = gemini_file.uri
+            logger.info("upload gemini_uri=%s", gemini_file_uri)
+        except Exception as e:
+            logger.error("gemini upload failed: %s", e)
+            raise HTTPException(status_code=500, detail=f"Gemini Files API upload failed: {str(e)}")
+        finally:
+            if "tmp_path" in locals():
+                os.unlink(tmp_path)
+    else:
+        logger.info("upload docx detected; will parse text from storage during chat")
 
     # Store metadata
     result = supabase.table("conversation_files").insert({
@@ -522,7 +528,7 @@ async def upload_file(
         "user_id": user_id,
         "filename": file.filename,
         "storage_path": storage_path,
-        "gemini_file_uri": gemini_file.uri,
+        "gemini_file_uri": gemini_file_uri,
         "mime_type": file.content_type,
         "file_size": len(file_bytes),
     }).execute()

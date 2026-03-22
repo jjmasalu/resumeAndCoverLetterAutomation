@@ -40,9 +40,15 @@ interface JobResultEvent {
   location?: string;
 }
 
+interface UploadResponse {
+  file_id: string;
+}
+
 export default function ChatPage() {
   const { id } = useParams<{ id: string }>();
   const searchParams = useSearchParams();
+  const initialMessage = searchParams.get("initial");
+  const hasInitialMessage = Boolean(initialMessage);
   const { conversations, setActiveConversation, activeConversation } = useApp();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -50,7 +56,7 @@ export default function ChatPage() {
   const [statuses, setStatuses] = useState<StatusEvent[]>([]);
   const [documents, setDocuments] = useState<DocumentEvent[]>([]);
   const [jobResults, setJobResults] = useState<JobResultEvent[]>([]);
-  const [loadingMessages, setLoadingMessages] = useState(true);
+  const [loadingMessages, setLoadingMessages] = useState(() => !hasInitialMessage);
   const [attachError, setAttachError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -67,8 +73,7 @@ export default function ChatPage() {
 
   // Load existing messages and documents (skip if auto-sending initial message)
   useEffect(() => {
-    const hasInitial = searchParams.get("initial");
-    if (hasInitial) {
+    if (hasInitialMessage) {
       // Brand-new conversation via redirect — no messages to fetch
       setLoadingMessages(false);
       return;
@@ -81,10 +86,10 @@ export default function ChatPage() {
       })
       .catch(console.error)
       .finally(() => setLoadingMessages(false));
-  }, [id, searchParams]);
+  }, [id, hasInitialMessage]);
 
   // Core send logic — accepts message directly, no dependency on input state
-  const doSend = useCallback(async (userMsg: string) => {
+  const doSend = useCallback(async (userMsg: string, attachmentFileIds: string[] = []) => {
     if (streamingRef.current) return;
 
     setMessages((prev) => [...prev, { role: "user", content: userMsg }]);
@@ -116,7 +121,10 @@ export default function ChatPage() {
             "Content-Type": "application/json",
             Authorization: `Bearer ${session.access_token}`,
           },
-          body: JSON.stringify({ content: userMsg }),
+          body: JSON.stringify({
+            content: userMsg,
+            attachment_file_ids: attachmentFileIds,
+          }),
         }
       );
 
@@ -200,11 +208,14 @@ export default function ChatPage() {
     if (!file) return;
     setAttachError(null);
     try {
-      await apiUpload(`/conversations/${id}/upload`, file);
-      doSend(`I've uploaded an additional document: ${file.name}. Please review it.`);
+      const upload = await apiUpload<UploadResponse>(`/conversations/${id}/upload`, file);
+      await doSend(
+        `I've uploaded an additional document: ${file.name}. Please review it.`,
+        [upload.file_id]
+      );
     } catch (err) {
       console.error("Upload failed:", err);
-      setAttachError("Upload failed — please try again.");
+      setAttachError(err instanceof Error ? err.message : "Upload failed — please try again.");
     }
     // Reset input so same file can be re-selected
     e.target.value = "";
@@ -212,13 +223,16 @@ export default function ChatPage() {
 
   // Auto-send initial message from landing page / new chat
   useEffect(() => {
-    const initial = searchParams.get("initial");
-    if (initial && !initialSent.current && !loadingMessages) {
+    if (initialMessage && !initialSent.current && !loadingMessages) {
       initialSent.current = true;
       window.history.replaceState({}, "", `/chat/${id}`);
-      doSend(initial);
+      doSend(initialMessage);
     }
-  }, [searchParams, loadingMessages, id, doSend]);
+  }, [initialMessage, loadingMessages, id, doSend]);
+
+  const isAwaitingInitialMessage = hasInitialMessage && !initialSent.current && messages.length === 0;
+  const showCenteredLoader = loadingMessages && messages.length === 0 && !isAwaitingInitialMessage;
+  const showEmptyState = !loadingMessages && messages.length === 0 && !isAwaitingInitialMessage;
 
   // Auto-scroll
   useEffect(() => {
@@ -256,12 +270,12 @@ export default function ChatPage() {
     <div className="flex flex-col h-full">
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-5 py-6">
-        {loadingMessages && (
+        {showCenteredLoader && (
           <div className="flex items-center justify-center h-full">
             <div className="w-5 h-5 border-2 border-accent border-t-transparent rounded-full animate-spin" />
           </div>
         )}
-        {!loadingMessages && messages.length === 0 && (
+        {showEmptyState && (
           <div className="flex flex-col items-center justify-center h-full">
             <div className="w-12 h-12 rounded-xl bg-bg-secondary border border-border flex items-center justify-center mb-4">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-accent">

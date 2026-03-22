@@ -36,6 +36,7 @@ Two-stage pipeline:
 
 ### AI
 - **Gemini 2.5 Flash** (Google AI) — generates tailored resume bullet points and cover letter copy via native function calling; ~25x cheaper on output tokens than comparable models
+- **Turn router** — a lightweight classifier step decides whether the assistant should respond directly, save profile memory, or enter the full tool-driven flow
 
 ### Auth
 - **Supabase Auth** with ES256 JWTs — backend verifies tokens via JWKS endpoint (no shared JWT secret needed)
@@ -54,6 +55,7 @@ Browser (Next.js on Vercel)
     └──SSE──> FastAPI (Cloud Run)
                   │
                   ├──> Gemini 2.5 Flash (chat + function calling)
+                  │         └──> turn router (small talk / clarification / tool intent)
                   │         │
                   │    ┌────┼────┐────────────┐
                   │  Tavily  Firecrawl    save_user_context

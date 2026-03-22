@@ -2,6 +2,7 @@ import logging
 import os
 import uuid
 import io
+import json
 from datetime import datetime, timezone
 from tavily import TavilyClient
 from firecrawl import Firecrawl
@@ -15,6 +16,166 @@ tavily_client = TavilyClient(api_key=settings.tavily_api_key)
 firecrawl_client = Firecrawl(api_key=settings.firecrawl_api_key)
 
 TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
+
+
+def _canonicalize_for_merge(value):
+    if isinstance(value, dict):
+        return {
+            key: _canonicalize_for_merge(val)
+            for key, val in sorted(value.items())
+        }
+    if isinstance(value, list):
+        return [_canonicalize_for_merge(item) for item in value]
+    return value
+
+
+def _merge_context_content(existing, incoming):
+    """Merge progressively learned user context instead of overwriting it."""
+    if existing in (None, {}, [], ""):
+        return incoming
+    if incoming in (None, {}, [], ""):
+        return existing
+
+    if isinstance(existing, dict) and isinstance(incoming, dict):
+        merged = dict(existing)
+        for key, value in incoming.items():
+            if key in merged:
+                merged[key] = _merge_context_content(merged[key], value)
+            else:
+                merged[key] = value
+        return merged
+
+    if isinstance(existing, list) and isinstance(incoming, list):
+        merged = list(existing)
+        seen = {
+            json.dumps(_canonicalize_for_merge(item), sort_keys=True, default=str)
+            for item in existing
+        }
+        for item in incoming:
+            key = json.dumps(_canonicalize_for_merge(item), sort_keys=True, default=str)
+            if key in seen:
+                continue
+            merged.append(item)
+            seen.add(key)
+        return merged
+
+    return incoming
+
+
+def _list_to_text(value) -> str:
+    if isinstance(value, list):
+        return ", ".join(str(item).strip() for item in value if str(item).strip())
+    if value in (None, ""):
+        return ""
+    return str(value).strip()
+
+
+def _format_resume_skills(skills) -> str:
+    if isinstance(skills, str):
+        return skills
+    if isinstance(skills, list):
+        return _list_to_text(skills)
+    if isinstance(skills, dict):
+        groups = []
+        for label, value in skills.items():
+            value_text = _list_to_text(value)
+            if value_text:
+                groups.append(f"{label}: {value_text}")
+        return "; ".join(groups)
+    return _list_to_text(skills)
+
+
+def _format_education_entries(education) -> str:
+    if isinstance(education, str):
+        return education
+    if isinstance(education, dict):
+        education = [education]
+    if isinstance(education, list):
+        entries = []
+        for item in education:
+            if isinstance(item, dict):
+                main_parts = [
+                    item.get("degree"),
+                    item.get("institution"),
+                ]
+                main_text = ", ".join(str(part).strip() for part in main_parts if part)
+                detail_parts = [
+                    item.get("location"),
+                    item.get("dates"),
+                    f"GPA {item['gpa']}" if item.get("gpa") else None,
+                    f"Average {item['average']}" if item.get("average") else None,
+                ]
+                details = " | ".join(str(part).strip() for part in detail_parts if part)
+                awards = item.get("awards")
+                awards_text = _list_to_text(awards)
+                if awards_text:
+                    details = f"{details} | Awards: {awards_text}" if details else f"Awards: {awards_text}"
+                if details:
+                    entries.append(f"{main_text} ({details})" if main_text else details)
+                elif main_text:
+                    entries.append(main_text)
+            else:
+                item_text = str(item).strip()
+                if item_text:
+                    entries.append(item_text)
+        return "; ".join(entries)
+    return _list_to_text(education)
+
+
+def _normalize_resume_experiences(experiences) -> list[dict]:
+    if not isinstance(experiences, list):
+        return []
+
+    normalized = []
+    for item in experiences:
+        if not isinstance(item, dict):
+            continue
+
+        bullets = item.get("bullets", [])
+        if isinstance(bullets, str):
+            bullet_list = [bullets]
+        elif isinstance(bullets, list):
+            bullet_list = [str(bullet).strip() for bullet in bullets if str(bullet).strip()]
+        else:
+            bullet_text = str(bullets).strip()
+            bullet_list = [bullet_text] if bullet_text else []
+
+        normalized.append({
+            "company": str(item.get("company", "")).strip(),
+            "role": str(item.get("role", "")).strip(),
+            "dates": str(item.get("dates", "")).strip(),
+            "bullets": bullet_list,
+        })
+
+    return normalized
+
+
+def _normalize_document_sections(doc_type: str, sections: dict) -> dict:
+    normalized = dict(sections or {})
+
+    if doc_type == "resume":
+        normalized["summary"] = _list_to_text(normalized.get("summary"))
+        normalized["skills"] = _format_resume_skills(normalized.get("skills"))
+        normalized["education"] = _format_education_entries(normalized.get("education"))
+        normalized["experiences"] = _normalize_resume_experiences(normalized.get("experiences"))
+        return normalized
+
+    if doc_type == "cover_letter":
+        paragraphs = normalized.get("paragraphs", [])
+        normalized["date"] = datetime.now().strftime("%B %d, %Y").replace(" 0", " ")
+        normalized["hiring_manager"] = _list_to_text(normalized.get("hiring_manager")) or "Hiring Manager"
+        normalized["company"] = _list_to_text(normalized.get("company"))
+        normalized["role"] = _list_to_text(normalized.get("role"))
+        if isinstance(paragraphs, str):
+            normalized["paragraphs"] = [paragraphs]
+        elif isinstance(paragraphs, list):
+            normalized["paragraphs"] = [str(paragraph).strip() for paragraph in paragraphs if str(paragraph).strip()]
+        else:
+            paragraph_text = _list_to_text(paragraphs)
+            normalized["paragraphs"] = [paragraph_text] if paragraph_text else []
+        return normalized
+
+    return normalized
 
 
 async def search_jobs(query: str, location: str | None = None) -> list[dict]:
@@ -70,8 +231,9 @@ async def generate_document(
     logger.info("generate_document type=%s job_id=%s", doc_type, job_id[:8])
     template_path = os.path.join(TEMPLATE_DIR, f"{doc_type}.docx")
     try:
+        normalized_sections = _normalize_document_sections(doc_type, sections)
         doc = DocxTemplate(template_path)
-        doc.render(sections)
+        doc.render(normalized_sections)
 
         buffer = io.BytesIO()
         doc.save(buffer)
@@ -121,15 +283,19 @@ async def save_user_context(
     try:
         existing = (
             supabase.table("user_context")
-            .select("id")
+            .select("id, content")
             .eq("user_id", user_id)
             .eq("category", category)
             .execute()
         )
 
         if existing.data:
+            merged_content = _merge_context_content(
+                existing.data[0].get("content"),
+                content,
+            )
             supabase.table("user_context").update({
-                "content": content,
+                "content": merged_content,
                 "source_conversation_id": conversation_id,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }).eq("id", existing.data[0]["id"]).execute()

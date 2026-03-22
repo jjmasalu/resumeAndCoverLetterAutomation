@@ -1,6 +1,9 @@
 import json
+import io
 import logging
+import re
 from typing import AsyncGenerator
+from docx import Document as WordDocument
 from google import genai
 from google.genai import types
 from sse_starlette.sse import ServerSentEvent
@@ -13,87 +16,99 @@ logger = logging.getLogger(__name__)
 gemini_client = genai.Client(api_key=settings.gemini_api_key)
 
 MODEL = "gemini-2.5-flash"
+DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 # Gemini function declarations
+SEARCH_JOBS_DECLARATION = types.FunctionDeclaration(
+    name="search_jobs",
+    description="Search the web for job postings matching a query. Use when the user describes a role they want or asks to find jobs.",
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "query": types.Schema(type=types.Type.STRING, description="Job search query, e.g. 'Senior Python Developer'"),
+            "location": types.Schema(type=types.Type.STRING, description="Job location, e.g. 'New York' or 'remote'"),
+        },
+        required=["query"],
+    ),
+)
+
+SCRAPE_JOB_DECLARATION = types.FunctionDeclaration(
+    name="scrape_job",
+    description="Extract the full job description from a URL. Use after finding a job URL or when the user provides one.",
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "url": types.Schema(type=types.Type.STRING, description="URL of the job posting"),
+        },
+        required=["url"],
+    ),
+)
+
+GENERATE_DOCUMENT_DECLARATION = types.FunctionDeclaration(
+    name="generate_document",
+    description="Generate a resume or cover letter as a .docx file. Use only after you have gathered enough information about the user and the job.",
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "doc_type": types.Schema(type=types.Type.STRING, description="'resume' or 'cover_letter'"),
+            "sections": types.Schema(
+                type=types.Type.OBJECT,
+                description="Template variables. Resume: {name, title, summary, experiences: [{company, role, dates, bullets}], skills, education}. Cover letter: {name, date, company, hiring_manager, role, paragraphs: [str]}",
+            ),
+        },
+        required=["doc_type", "sections"],
+    ),
+)
+
+SAVE_USER_CONTEXT_DECLARATION = types.FunctionDeclaration(
+    name="save_user_context",
+    description="Save information you've learned about the user for future conversations. Use when the user shares their work experience, skills, education, or other profile info.",
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "category": types.Schema(type=types.Type.STRING, description="Category: 'work_experience', 'skills', 'education', 'certifications', 'personal_info', or 'preferences'"),
+            "content": types.Schema(type=types.Type.OBJECT, description="Structured data about this category"),
+        },
+        required=["category", "content"],
+    ),
+)
+
+PRESENT_JOB_RESULTS_DECLARATION = types.FunctionDeclaration(
+    name="present_job_results",
+    description="Present job search results to the user as structured cards. Call this AFTER you have searched for jobs, scraped promising results, and assessed match scores.",
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "results": types.Schema(
+                type=types.Type.ARRAY,
+                items=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "title": types.Schema(type=types.Type.STRING, description="Job title"),
+                        "url": types.Schema(type=types.Type.STRING, description="Job posting URL"),
+                        "snippet": types.Schema(type=types.Type.STRING, description="Brief description of the role"),
+                        "match_score": types.Schema(type=types.Type.INTEGER, description="0-100 match percentage based on user profile"),
+                        "company": types.Schema(type=types.Type.STRING, description="Company name"),
+                        "location": types.Schema(type=types.Type.STRING, description="Location or remote status"),
+                    },
+                    required=["title", "url", "snippet", "match_score"],
+                ),
+            ),
+        },
+        required=["results"],
+    ),
+)
+
 TOOL_DECLARATIONS = types.Tool(
     function_declarations=[
-        types.FunctionDeclaration(
-            name="search_jobs",
-            description="Search the web for job postings matching a query. Use when the user describes a role they want or asks to find jobs.",
-            parameters=types.Schema(
-                type=types.Type.OBJECT,
-                properties={
-                    "query": types.Schema(type=types.Type.STRING, description="Job search query, e.g. 'Senior Python Developer'"),
-                    "location": types.Schema(type=types.Type.STRING, description="Job location, e.g. 'New York' or 'remote'"),
-                },
-                required=["query"],
-            ),
-        ),
-        types.FunctionDeclaration(
-            name="scrape_job",
-            description="Extract the full job description from a URL. Use after finding a job URL or when the user provides one.",
-            parameters=types.Schema(
-                type=types.Type.OBJECT,
-                properties={
-                    "url": types.Schema(type=types.Type.STRING, description="URL of the job posting"),
-                },
-                required=["url"],
-            ),
-        ),
-        types.FunctionDeclaration(
-            name="generate_document",
-            description="Generate a resume or cover letter as a .docx file. Use only after you have gathered enough information about the user and the job.",
-            parameters=types.Schema(
-                type=types.Type.OBJECT,
-                properties={
-                    "doc_type": types.Schema(type=types.Type.STRING, description="'resume' or 'cover_letter'"),
-                    "sections": types.Schema(
-                        type=types.Type.OBJECT,
-                        description="Template variables. Resume: {name, title, summary, experiences: [{company, role, dates, bullets}], skills, education}. Cover letter: {name, date, company, hiring_manager, role, paragraphs: [str]}",
-                    ),
-                },
-                required=["doc_type", "sections"],
-            ),
-        ),
-        types.FunctionDeclaration(
-            name="save_user_context",
-            description="Save information you've learned about the user for future conversations. Use when the user shares their work experience, skills, education, or other profile info.",
-            parameters=types.Schema(
-                type=types.Type.OBJECT,
-                properties={
-                    "category": types.Schema(type=types.Type.STRING, description="Category: 'work_experience', 'skills', 'education', 'certifications', 'personal_info', or 'preferences'"),
-                    "content": types.Schema(type=types.Type.OBJECT, description="Structured data about this category"),
-                },
-                required=["category", "content"],
-            ),
-        ),
-        types.FunctionDeclaration(
-            name="present_job_results",
-            description="Present job search results to the user as structured cards. Call this AFTER you have searched for jobs, scraped promising results, and assessed match scores.",
-            parameters=types.Schema(
-                type=types.Type.OBJECT,
-                properties={
-                    "results": types.Schema(
-                        type=types.Type.ARRAY,
-                        items=types.Schema(
-                            type=types.Type.OBJECT,
-                            properties={
-                                "title": types.Schema(type=types.Type.STRING, description="Job title"),
-                                "url": types.Schema(type=types.Type.STRING, description="Job posting URL"),
-                                "snippet": types.Schema(type=types.Type.STRING, description="Brief description of the role"),
-                                "match_score": types.Schema(type=types.Type.INTEGER, description="0-100 match percentage based on user profile"),
-                                "company": types.Schema(type=types.Type.STRING, description="Company name"),
-                                "location": types.Schema(type=types.Type.STRING, description="Location or remote status"),
-                            },
-                            required=["title", "url", "snippet", "match_score"],
-                        ),
-                    ),
-                },
-                required=["results"],
-            ),
-        ),
+        SEARCH_JOBS_DECLARATION,
+        SCRAPE_JOB_DECLARATION,
+        GENERATE_DOCUMENT_DECLARATION,
+        SAVE_USER_CONTEXT_DECLARATION,
+        PRESENT_JOB_RESULTS_DECLARATION,
     ]
 )
+SAVE_CONTEXT_ONLY_TOOL = types.Tool(function_declarations=[SAVE_USER_CONTEXT_DECLARATION])
 
 JOB_TO_RESUME_PROMPT = """You are a career assistant helping the user create a tailored resume and cover letter for a specific job.
 
@@ -144,6 +159,26 @@ Be proactive in suggesting roles based on the user's skills and experience.
 IMPORTANT: When you generate a document, do NOT paste the download URL in your
 response. The UI will automatically show a download card."""
 
+TURN_ROUTER_PROMPT = """You are a turn router for a resume and job-search assistant.
+
+Classify the current user turn before the main assistant responds.
+Return JSON only with this shape:
+{
+  "intent": "small_talk|clarification|profile_update|search_jobs|analyze_job_url|job_selection|generate_documents|revise_documents|general_guidance",
+  "allow_tools": true,
+  "response_mode": "direct_answer|ask_clarifying_question|tool_driven",
+  "reason": "short explanation"
+}
+
+Rules:
+- Use allow_tools=false for greetings, thanks, small talk, direct clarifying questions, or general advice that does not require search/scraping/document generation.
+- Use allow_tools=true when the user wants job search, job URL analysis, job matching, or document generation.
+- If the user shares new background information about themselves, prefer profile_update and set allow_tools=true so the assistant can save structured memory.
+- If the user includes a likely URL for a job posting, prefer analyze_job_url with allow_tools=true.
+- If the user asks to generate or tailor a resume and/or cover letter, prefer generate_documents with allow_tools=true.
+- Be conservative about tool use. If a focused conversational response is enough for this turn, set allow_tools=false.
+"""
+
 
 def _build_context_prompt(user_id: str) -> str:
     """Load user context from Supabase and format as a prompt section."""
@@ -172,10 +207,183 @@ def _build_history(conversation_id: str) -> list[types.Content]:
     return contents
 
 
-def _get_conversation_file(conversation_id: str) -> dict | None:
-    """Get the uploaded file for a conversation. Returns the file record or None."""
-    result = supabase.table("conversation_files").select("*").eq("conversation_id", conversation_id).limit(1).execute()
-    return result.data[0] if result.data else None
+def _get_conversation_files(
+    conversation_id: str,
+    file_ids: list[str] | None = None,
+) -> list[dict]:
+    """Get uploaded files for a conversation, optionally scoped to specific ids."""
+    query = (
+        supabase.table("conversation_files")
+        .select("*")
+        .eq("conversation_id", conversation_id)
+        .order("created_at")
+    )
+    if file_ids:
+        query = query.in_("id", file_ids)
+    result = query.execute()
+    return result.data or []
+
+
+def _build_user_message_content(
+    user_message: str,
+    file_records: list[dict],
+) -> types.Content:
+    parts = []
+    for file_record in file_records:
+        if file_record["mime_type"] == DOCX_MIME_TYPE:
+            extracted_text = _extract_docx_text(file_record)
+            if extracted_text:
+                parts.append(types.Part.from_text(
+                    text=f"Attached document ({file_record['filename']}):\n{extracted_text}"
+                ))
+            else:
+                parts.append(types.Part.from_text(
+                    text=f"The user attached {file_record['filename']}, but the document text could not be extracted."
+                ))
+            continue
+
+        parts.append(types.Part.from_uri(
+            file_uri=file_record["gemini_file_uri"],
+            mime_type=file_record["mime_type"],
+        ))
+    parts.append(types.Part.from_text(text=user_message))
+    return types.Content(role="user", parts=parts)
+
+
+def _extract_docx_text(file_record: dict) -> str:
+    try:
+        payload = supabase.storage.from_("uploads").download(file_record["storage_path"])
+        file_bytes = payload.read() if hasattr(payload, "read") else payload
+        document = WordDocument(io.BytesIO(file_bytes))
+        paragraphs = [paragraph.text.strip() for paragraph in document.paragraphs if paragraph.text.strip()]
+        return "\n".join(paragraphs)
+    except Exception as error:
+        logger.warning("failed to extract docx text for %s: %s", file_record.get("filename"), error)
+        return ""
+
+
+def _response_text(response) -> str:
+    text = getattr(response, "text", None)
+    if text:
+        return text
+
+    candidates = getattr(response, "candidates", None) or []
+    if not candidates:
+        return ""
+
+    candidate = candidates[0]
+    content = getattr(candidate, "content", None)
+    parts = getattr(content, "parts", None) or []
+    texts = [part.text for part in parts if getattr(part, "text", None)]
+    return "".join(texts)
+
+
+def _recent_history_for_router(history: list[types.Content], limit: int = 6) -> str:
+    snippets: list[str] = []
+    for content in history[-limit:]:
+        role = getattr(content, "role", "user")
+        text_parts = []
+        for part in content.parts:
+            if getattr(part, "text", None):
+                text_parts.append(part.text)
+            elif getattr(part, "file_uri", None):
+                text_parts.append(f"[file:{part.file_uri}]")
+        if text_parts:
+            snippets.append(f"{role}: {' '.join(text_parts)}")
+    return "\n".join(snippets) if snippets else "No previous messages."
+
+
+def _heuristic_turn_router(user_message: str) -> dict | None:
+    lower = user_message.strip().lower()
+    if not lower:
+        return {
+            "intent": "clarification",
+            "allow_tools": False,
+            "response_mode": "ask_clarifying_question",
+            "reason": "The user message is empty.",
+        }
+
+    if re.search(r"https?://", user_message):
+        return {
+            "intent": "analyze_job_url",
+            "allow_tools": True,
+            "response_mode": "tool_driven",
+            "reason": "The message contains a URL that likely needs scraping.",
+        }
+
+    if lower in {"hi", "hello", "hey", "thanks", "thank you", "good morning", "good afternoon"}:
+        return {
+            "intent": "small_talk",
+            "allow_tools": False,
+            "response_mode": "direct_answer",
+            "reason": "This is a short greeting or acknowledgment.",
+        }
+
+    return None
+
+
+def _analyze_turn(
+    *,
+    user_message: str,
+    mode: str,
+    context_prompt: str,
+    history: list[types.Content],
+) -> dict:
+    heuristic = _heuristic_turn_router(user_message)
+    if heuristic:
+        return heuristic
+
+    router_contents = f"""{TURN_ROUTER_PROMPT}
+
+Conversation mode: {mode}
+
+Known user context:
+{context_prompt}
+
+Recent history:
+{_recent_history_for_router(history)}
+
+Current user message:
+{user_message}
+"""
+
+    try:
+        response = gemini_client.models.generate_content(
+            model=MODEL,
+            contents=router_contents,
+            config=types.GenerateContentConfig(
+                temperature=0.0,
+                response_mime_type="application/json",
+            ),
+        )
+        router = json.loads(_response_text(response))
+        if not isinstance(router, dict):
+            raise ValueError("Router response is not an object")
+        if "allow_tools" not in router:
+            router["allow_tools"] = True
+        if "intent" not in router:
+            router["intent"] = "general_guidance"
+        if "response_mode" not in router:
+            router["response_mode"] = "tool_driven" if router["allow_tools"] else "direct_answer"
+        if "reason" not in router:
+            router["reason"] = "Router did not provide a reason."
+        return router
+    except Exception as error:
+        logger.warning("turn router failed, defaulting to tool-enabled flow: %s", error)
+        return {
+            "intent": "general_guidance",
+            "allow_tools": True,
+            "response_mode": "tool_driven",
+            "reason": "Router fallback after analysis failure.",
+        }
+
+
+def _tools_for_router(router: dict) -> list[types.Tool]:
+    if not router.get("allow_tools", True):
+        return []
+    if router.get("intent") == "profile_update":
+        return [SAVE_CONTEXT_ONLY_TOOL]
+    return [TOOL_DECLARATIONS]
 
 
 async def _execute_tool(
@@ -248,30 +456,46 @@ async def stream_chat(
     user_id: str,
     user_message: str,
     mode: str,
+    attachment_file_ids: list[str] | None = None,
 ) -> AsyncGenerator[ServerSentEvent, None]:
     """Stream a chat response with function calling via SSE."""
     logger.info("stream conv=%s mode=%s msg=%s", conversation_id[:8], mode, user_message[:60])
 
-    # Save user message
+    attachment_file_ids = attachment_file_ids or []
+    history = _build_history(conversation_id)
+    all_files = _get_conversation_files(conversation_id)
+    is_first_exchange = len(history) == 0
+    context_prompt = _build_context_prompt(user_id)
+    router = _analyze_turn(
+        user_message=user_message,
+        mode=mode,
+        context_prompt=context_prompt,
+        history=history,
+    )
+
     supabase.table("messages").insert({
         "conversation_id": conversation_id,
         "role": "user",
         "content": user_message,
+        "metadata": {
+            "router": router,
+            "attachment_file_ids": attachment_file_ids,
+        },
     }).execute()
 
-    # Check for uploaded file (used for both prompt selection and content building)
-    file_record = _get_conversation_file(conversation_id)
-
-    # Build history (includes the just-saved user message)
-    history = _build_history(conversation_id)
-    logger.info("stream history=%d messages, file=%s", len(history), bool(file_record))
+    logger.info(
+        "stream history=%d messages, files=%d, router_intent=%s, tools_allowed=%s",
+        len(history),
+        len(all_files),
+        router.get("intent"),
+        router.get("allow_tools"),
+    )
 
     # Build system prompt based on mode
     if mode == "job_to_resume":
         system_prompt = JOB_TO_RESUME_PROMPT
     elif mode == "find_jobs":
-        # history has 1 entry = this is the first exchange
-        if file_record and len(history) <= 1:
+        if all_files and is_first_exchange:
             system_prompt = FIND_JOBS_WITH_FILE_PROMPT
             logger.info("stream using FIND_JOBS_WITH_FILE prompt")
         else:
@@ -279,28 +503,34 @@ async def stream_chat(
     else:
         system_prompt = JOB_TO_RESUME_PROMPT
 
-    context_prompt = _build_context_prompt(user_id)
-    full_system = f"{system_prompt}\n\n{context_prompt}"
+    full_system = f"""{system_prompt}
 
-    # If file exists and this is the first exchange, replace the user message
-    # in history with a version that includes the file attachment
-    if file_record and len(history) <= 1 and history:
-        history.pop()
-        user_parts = [
-            types.Part.from_uri(
-                file_uri=file_record["gemini_file_uri"],
-                mime_type=file_record["mime_type"],
-            ),
-            types.Part.from_text(text=user_message),
-        ]
-        history.append(types.Content(role="user", parts=user_parts))
-        logger.info("stream attached file uri=%s", file_record["gemini_file_uri"])
+{context_prompt}
+
+Turn routing guidance:
+- intent: {router.get("intent")}
+- response_mode: {router.get("response_mode")}
+- tools_allowed: {router.get("allow_tools")}
+- reason: {router.get("reason")}
+
+If tools_allowed is false, do not call any tools on this turn. Answer directly or ask one focused follow-up question."""
+
+    current_files = _get_conversation_files(conversation_id, attachment_file_ids) if attachment_file_ids else []
+    if not current_files and all_files and is_first_exchange:
+        current_files = all_files
+
+    contents = list(history)
+    contents.append(_build_user_message_content(user_message, current_files))
+    if current_files:
+        logger.info(
+            "stream attached files=%s",
+            [file_record["id"][:8] for file_record in current_files],
+        )
 
     # Track job_id for document generation
     existing_jobs = supabase.table("jobs").select("id").eq("conversation_id", conversation_id).order("created_at", desc=True).limit(1).execute()
     job_id = existing_jobs.data[0]["id"] if existing_jobs.data else None
 
-    contents = history
     full_response = ""
     max_tool_rounds = 5
 
@@ -310,14 +540,17 @@ async def stream_chat(
 
         logger.info("stream round=%d calling Gemini...", tool_round + 1)
         try:
+            config_kwargs = {
+                "system_instruction": full_system,
+                "temperature": 0.7,
+            }
+            tools_for_turn = _tools_for_router(router)
+            if tools_for_turn:
+                config_kwargs["tools"] = tools_for_turn
             response_stream = gemini_client.models.generate_content_stream(
                 model=MODEL,
                 contents=contents,
-                config=types.GenerateContentConfig(
-                    system_instruction=full_system,
-                    tools=[TOOL_DECLARATIONS],
-                    temperature=0.7,
-                ),
+                config=types.GenerateContentConfig(**config_kwargs),
             )
         except Exception as e:
             logger.error("gemini API error: %s", e)

@@ -75,6 +75,8 @@ npm run dev
 
 Frontend runs at **http://localhost:3000**.
 
+Use `localhost`, not `127.0.0.1`, for browser testing so it matches the backend CORS allowlist.
+
 ### 3. Test the Flow
 
 1. Open http://localhost:3000 — redirects to `/login`
@@ -132,6 +134,20 @@ Run: `docker compose up --build`
 ```bash
 cd backend
 .venv/bin/python -m pytest tests/ -v
+
+# Local API harness (works through the team access gate)
+.venv/bin/python test_api.py \
+  --base-url http://127.0.0.1:8000 \
+  --access-code '<current-team-access-code>' \
+  --verbose
+
+# Resume upload scenario (PDF or DOCX)
+.venv/bin/python test_api.py \
+  --test upload_and_stream \
+  --base-url http://127.0.0.1:8000 \
+  --access-code '<current-team-access-code>' \
+  --resume /absolute/path/to/resume.docx \
+  --verbose
 ```
 
 ## Team Access Gate
