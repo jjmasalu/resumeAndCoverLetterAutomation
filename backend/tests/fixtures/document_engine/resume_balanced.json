@@ -1,0 +1,62 @@
+{
+  "id": "resume_balanced",
+  "doc_type": "resume",
+  "input": {
+    "name": "Avery Carter",
+    "title": "Backend Engineer",
+    "summary": "Backend engineer with experience building API platforms, job matching systems, and AI document workflows.",
+    "skills": {
+      "Languages": ["Python", "SQL", "TypeScript"],
+      "Frameworks": ["FastAPI", "Flask"],
+      "Cloud": ["AWS", "GCP"]
+    },
+    "education": [
+      {
+        "degree": "BSc Computer Science",
+        "institution": "Memorial University",
+        "location": "St. John's, NL",
+        "dates": "2021-2025",
+        "gpa": "3.83"
+      }
+    ],
+    "experiences": [
+      {
+        "company": "Nexa Labs",
+        "role": "Senior Backend Engineer",
+        "dates": "2021 to Present",
+        "bullets": [
+          "Led FastAPI services for AI document generation and job matching products.",
+          "Built streaming chat APIs, PostgreSQL data models, and Supabase integrations."
+        ]
+      },
+      {
+        "company": "Orbit Systems",
+        "role": "Software Engineer",
+        "dates": "2018 to 2021",
+        "bullets": [
+          "Implemented Python services, REST APIs, and resume parsing workflows.",
+          "Improved API reliability and simplified internal developer tooling."
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "theme_id": "technical_compact",
+    "page_budget": 1,
+    "verification_status": "passed",
+    "attempt_count": 1,
+    "repair_actions": [],
+    "layout_metrics": {
+      "experience_count": 2,
+      "bullet_count": 4
+    },
+    "required_text": [
+      "Avery Carter",
+      "Summary",
+      "Experience",
+      "Skills",
+      "Education",
+      "Nexa Labs"
+    ]
+  }
+}

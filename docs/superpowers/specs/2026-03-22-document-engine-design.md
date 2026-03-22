@@ -140,6 +140,7 @@ Implemented now:
 - bounded deterministic repair loop with observable repair history
 - deterministic DOCX composition using safe flow-layout primitives
 - local render verification tooling on macOS via LibreOffice -> PDF -> PNG
+- named regression fixtures plus a local regression runner for fixture output generation
 - backend contract that allows the model to select only approved `theme_id` values
 
 Not implemented yet:

@@ -1,0 +1,32 @@
+{
+  "id": "cover_letter_balanced",
+  "doc_type": "cover_letter",
+  "input": {
+    "name": "Avery Carter",
+    "company": "Boam AI",
+    "role": "Backend Engineer",
+    "paragraphs": [
+      "I am excited to apply for the Backend Engineer role at Boam AI.",
+      "I have built backend systems with FastAPI, PostgreSQL, and Supabase for AI document generation and job matching workflows.",
+      "I would bring strong API and distributed systems experience to the role.",
+      "Thank you for your time and consideration."
+    ]
+  },
+  "expected": {
+    "theme_id": "classic_professional",
+    "page_budget": 1,
+    "verification_status": "passed",
+    "attempt_count": 1,
+    "repair_actions": [],
+    "layout_metrics": {
+      "paragraph_count": 4
+    },
+    "required_text": [
+      "Hiring Manager",
+      "Boam AI",
+      "Re: Backend Engineer",
+      "Sincerely,",
+      "Avery Carter"
+    ]
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "id": "cover_letter_dense_repair",
+  "doc_type": "cover_letter",
+  "input": {
+    "name": "Avery Carter",
+    "company": "Boam AI",
+    "role": "Backend Engineer",
+    "theme_id": "classic_professional",
+    "paragraphs": [
+      "I build backend systems that support job matching, document generation, and production workflows. I build backend systems that support job matching, document generation, and production workflows. I build backend systems that support job matching, document generation, and production workflows. I build backend systems that support job matching, document generation, and production workflows.",
+      "At Nexa Labs, I led API platform work, database integrations, and reliability improvements across multiple services. At Nexa Labs, I led API platform work, database integrations, and reliability improvements across multiple services. At Nexa Labs, I led API platform work, database integrations, and reliability improvements across multiple services. At Nexa Labs, I led API platform work, database integrations, and reliability improvements across multiple services.",
+      "I would bring strong Python, FastAPI, PostgreSQL, and infrastructure experience to this role while staying close to product delivery needs. I would bring strong Python, FastAPI, PostgreSQL, and infrastructure experience to this role while staying close to product delivery needs. I would bring strong Python, FastAPI, PostgreSQL, and infrastructure experience to this role while staying close to product delivery needs. I would bring strong Python, FastAPI, PostgreSQL, and infrastructure experience to this role while staying close to product delivery needs.",
+      "Thank you for your time and consideration. I would welcome the opportunity to discuss how I could contribute. Thank you for your time and consideration. I would welcome the opportunity to discuss how I could contribute. Thank you for your time and consideration. I would welcome the opportunity to discuss how I could contribute."
+    ]
+  },
+  "expected": {
+    "theme_id": "technical_compact",
+    "page_budget": 1,
+    "verification_status": "passed",
+    "attempt_count_min": 4,
+    "repair_actions": [
+      "switch_theme",
+      "tighten_cover_letter_budgets",
+      "reduce_cover_letter_paragraphs"
+    ],
+    "layout_metrics": {
+      "paragraph_count_max": 3
+    },
+    "required_text": [
+      "Hiring Manager",
+      "Boam AI",
+      "Re: Backend Engineer",
+      "Sincerely,",
+      "Avery Carter"
+    ]
+  }
+}

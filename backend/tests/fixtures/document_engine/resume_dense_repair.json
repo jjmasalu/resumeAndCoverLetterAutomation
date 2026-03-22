@@ -1,0 +1,82 @@
+{
+  "id": "resume_dense_repair",
+  "doc_type": "resume",
+  "input": {
+    "name": "Avery Carter",
+    "title": "Senior Backend Engineer",
+    "theme_id": "classic_professional",
+    "summary": "Built high-volume APIs, ingestion systems, and internal developer platforms. Built high-volume APIs, ingestion systems, and internal developer platforms. Built high-volume APIs, ingestion systems, and internal developer platforms. Built high-volume APIs, ingestion systems, and internal developer platforms. Built high-volume APIs, ingestion systems, and internal developer platforms. Built high-volume APIs, ingestion systems, and internal developer platforms. Built high-volume APIs, ingestion systems, and internal developer platforms. Built high-volume APIs, ingestion systems, and internal developer platforms. Built high-volume APIs, ingestion systems, and internal developer platforms. Built high-volume APIs, ingestion systems, and internal developer platforms. Built high-volume APIs, ingestion systems, and internal developer platforms. Built high-volume APIs, ingestion systems, and internal developer platforms.",
+    "skills": {
+      "Languages": ["Python", "TypeScript", "SQL", "Go", "JavaScript"],
+      "Cloud": ["AWS", "GCP", "Azure", "Cloud Run", "Kubernetes"],
+      "Data": ["PostgreSQL", "Redis", "MongoDB", "BigQuery"],
+      "Other": ["FastAPI", "Flask", "CI/CD", "Observability", "Terraform"]
+    },
+    "education": "BSc Computer Science, Memorial University (2021-2025 | GPA 3.83)",
+    "experiences": [
+      {
+        "company": "Nexa Labs",
+        "role": "Senior Backend Engineer",
+        "dates": "2023 to Present",
+        "bullets": [
+          "Built resilient APIs for document generation and matching systems.",
+          "Led backend reliability work across storage, auth, and orchestration.",
+          "Improved latency and observability."
+        ]
+      },
+      {
+        "company": "Orbit Systems",
+        "role": "Platform Engineer",
+        "dates": "2021 to 2023",
+        "bullets": [
+          "Built Python services for internal tools.",
+          "Improved CI/CD and deployment automation.",
+          "Partnered with product teams."
+        ]
+      },
+      {
+        "company": "Northwind",
+        "role": "Software Engineer",
+        "dates": "2020 to 2021",
+        "bullets": [
+          "Implemented APIs and data pipelines.",
+          "Improved database design.",
+          "Supported production operations."
+        ]
+      },
+      {
+        "company": "Acme",
+        "role": "Engineer",
+        "dates": "2019 to 2020",
+        "bullets": [
+          "Built backend features.",
+          "Maintained integrations.",
+          "Wrote tests and docs."
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "theme_id": "technical_compact",
+    "page_budget": 1,
+    "verification_status": "passed",
+    "attempt_count_min": 4,
+    "repair_actions": [
+      "switch_theme",
+      "tighten_text_budgets",
+      "reduce_bullets"
+    ],
+    "layout_metrics": {
+      "experience_count_max": 4,
+      "bullet_count_max": 4
+    },
+    "required_text": [
+      "Avery Carter",
+      "Senior Backend Engineer",
+      "Experience",
+      "Nexa Labs",
+      "Orbit Systems",
+      "Acme"
+    ]
+  }
+}

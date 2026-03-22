@@ -178,6 +178,39 @@ What this verifier does:
 - fails if any document exceeds its allowed page budget
 - records PNG preview paths so the output can be visually reviewed immediately
 
+## Document Engine Regression Fixtures
+
+The document engine now has named regression fixtures under:
+
+```bash
+backend/tests/fixtures/document_engine/
+```
+
+Run the fixture suite in normal backend tests:
+
+```bash
+cd backend
+.venv/bin/python -m pytest tests/test_document_engine_regression.py -q
+```
+
+Generate fixture outputs locally:
+
+```bash
+python3 scripts/run_document_engine_regression.py
+```
+
+Generate fixture outputs and run the real DOCX -> PDF -> PNG verification pass:
+
+```bash
+python3 scripts/run_document_engine_regression.py --render
+```
+
+This is the workflow to use when adding:
+- new themes
+- new repair rules
+- new spacing variants
+- denser or more complex layout behavior
+
 ## Team Access Gate
 
 The shared team-access code is stored in Supabase and is separate from Supabase Auth.
