@@ -106,3 +106,25 @@ def test_normalize_document_sections_sets_cover_letter_defaults():
     assert normalized["paragraphs"] == ["Paragraph one", "Paragraph two"]
     assert isinstance(normalized["date"], str)
     assert normalized["date"]
+
+
+def test_normalize_document_sections_compacts_cover_letter_paragraphs():
+    normalized = _normalize_document_sections(
+        "cover_letter",
+        {
+            "company": "Boam AI",
+            "role": "Backend Engineer",
+            "paragraphs": [
+                "Sentence one. Sentence two. Sentence three. Sentence four.",
+                "This paragraph is intentionally very long so that the normalizer has to trim it down to a safer size for the cover letter template while keeping it readable and reasonably complete for the final exported document.",
+                "Third paragraph stays in place.",
+                "Thank you for your time. I appreciate your consideration. I look forward to speaking with you soon.",
+                "This paragraph should be dropped.",
+            ],
+        },
+    )
+
+    assert len(normalized["paragraphs"]) == 4
+    assert normalized["paragraphs"][0] == "Sentence one. Sentence two. Sentence three."
+    assert len(normalized["paragraphs"][1]) <= 360
+    assert normalized["paragraphs"][-1] == "Thank you for your time. I appreciate your consideration."

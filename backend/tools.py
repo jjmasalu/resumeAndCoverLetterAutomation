@@ -3,6 +3,7 @@ import os
 import uuid
 import io
 import json
+import re
 from datetime import datetime, timezone
 from tavily import TavilyClient
 from firecrawl import Firecrawl
@@ -16,6 +17,9 @@ tavily_client = TavilyClient(api_key=settings.tavily_api_key)
 firecrawl_client = Firecrawl(api_key=settings.firecrawl_api_key)
 
 TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
+COVER_LETTER_MAX_PARAGRAPHS = 4
+COVER_LETTER_TARGET_TOTAL_CHARS = 1100
+SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[.!?])\s+")
 
 
 def _canonicalize_for_merge(value):
@@ -150,6 +154,83 @@ def _normalize_resume_experiences(experiences) -> list[dict]:
     return normalized
 
 
+def _clean_whitespace(text: str) -> str:
+    return re.sub(r"\s+", " ", str(text or "")).strip()
+
+
+def _compact_cover_letter_paragraph(text: str, *, max_sentences: int, max_chars: int) -> str:
+    cleaned = _clean_whitespace(text)
+    if not cleaned:
+        return ""
+
+    sentences = SENTENCE_BOUNDARY_RE.split(cleaned)
+    if len(sentences) > max_sentences:
+        cleaned = " ".join(sentences[:max_sentences]).strip()
+
+    if len(cleaned) <= max_chars:
+        return cleaned
+
+    shortened = cleaned[:max_chars].rstrip()
+    sentence_end = max(shortened.rfind(". "), shortened.rfind("! "), shortened.rfind("? "))
+    if sentence_end > max_chars // 2:
+        return shortened[:sentence_end + 1].strip()
+
+    shortened = shortened.rsplit(" ", 1)[0].rstrip(",;: ")
+    if shortened and shortened[-1] not in ".!?":
+        shortened += "."
+    return shortened
+
+
+def _normalize_cover_letter_paragraphs(paragraphs) -> list[str]:
+    if isinstance(paragraphs, str):
+        items = [paragraphs]
+    elif isinstance(paragraphs, list):
+        items = [str(paragraph) for paragraph in paragraphs]
+    else:
+        paragraph_text = _list_to_text(paragraphs)
+        items = [paragraph_text] if paragraph_text else []
+
+    compacted = [
+        _clean_whitespace(paragraph)
+        for paragraph in items
+        if _clean_whitespace(paragraph)
+    ][:COVER_LETTER_MAX_PARAGRAPHS]
+
+    if not compacted:
+        return []
+
+    normalized = []
+    for index, paragraph in enumerate(compacted):
+        is_closing_paragraph = index == len(compacted) - 1 and any(
+            token in paragraph.lower()
+            for token in ("thank", "appreciate", "welcome the opportunity", "look forward")
+        )
+        normalized.append(
+            _compact_cover_letter_paragraph(
+                paragraph,
+                max_sentences=2 if is_closing_paragraph else 3,
+                max_chars=220 if is_closing_paragraph else 360,
+            )
+        )
+
+    total_chars = sum(len(paragraph) for paragraph in normalized)
+    while total_chars > COVER_LETTER_TARGET_TOTAL_CHARS:
+        longest_index = max(range(len(normalized)), key=lambda idx: len(normalized[idx]))
+        current = normalized[longest_index]
+        tighter_limit = max(180, len(current) - 80)
+        updated = _compact_cover_letter_paragraph(
+            current,
+            max_sentences=2,
+            max_chars=tighter_limit,
+        )
+        if updated == current:
+            break
+        normalized[longest_index] = updated
+        total_chars = sum(len(paragraph) for paragraph in normalized)
+
+    return [paragraph for paragraph in normalized if paragraph]
+
+
 def _normalize_document_sections(doc_type: str, sections: dict) -> dict:
     normalized = dict(sections or {})
 
@@ -161,18 +242,11 @@ def _normalize_document_sections(doc_type: str, sections: dict) -> dict:
         return normalized
 
     if doc_type == "cover_letter":
-        paragraphs = normalized.get("paragraphs", [])
         normalized["date"] = datetime.now().strftime("%B %d, %Y").replace(" 0", " ")
         normalized["hiring_manager"] = _list_to_text(normalized.get("hiring_manager")) or "Hiring Manager"
         normalized["company"] = _list_to_text(normalized.get("company"))
         normalized["role"] = _list_to_text(normalized.get("role"))
-        if isinstance(paragraphs, str):
-            normalized["paragraphs"] = [paragraphs]
-        elif isinstance(paragraphs, list):
-            normalized["paragraphs"] = [str(paragraph).strip() for paragraph in paragraphs if str(paragraph).strip()]
-        else:
-            paragraph_text = _list_to_text(paragraphs)
-            normalized["paragraphs"] = [paragraph_text] if paragraph_text else []
+        normalized["paragraphs"] = _normalize_cover_letter_paragraphs(normalized.get("paragraphs"))
         return normalized
 
     return normalized

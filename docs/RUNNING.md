@@ -150,6 +150,20 @@ cd backend
   --verbose
 ```
 
+## Visual DOCX Rendering on macOS
+
+Use the local render helper to run the full LibreOffice -> PDF -> PNG pipeline:
+
+```bash
+scripts/render_docx_macos.sh /absolute/path/to/file.docx
+```
+
+Notes:
+- This uses `open -n -W -a /Applications/LibreOffice.app --args ...` instead of calling `soffice` directly. On this machine, direct `soffice --headless` crashes, while the LaunchServices path works.
+- Install `poppler` first so `pdftoppm` is available: `brew install poppler`
+- If macOS prompts when LibreOffice launches, click `Open` or `Allow`
+- Output images, PDFs, and LibreOffice logs are written under `tmp/docs/` by default. Override with `RENDER_OUTDIR=/absolute/path`
+
 ## Team Access Gate
 
 The shared team-access code is stored in Supabase and is separate from Supabase Auth.

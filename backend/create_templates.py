@@ -2,6 +2,7 @@
 from docx import Document
 from docx.shared import Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Inches
 import os
 
 
@@ -58,9 +59,18 @@ def create_resume_template():
 
 def create_cover_letter_template():
     doc = Document()
+    section = doc.sections[0]
+    section.top_margin = Inches(0.75)
+    section.bottom_margin = Inches(0.75)
+    section.left_margin = Inches(1.0)
+    section.right_margin = Inches(1.0)
+
     style = doc.styles["Normal"]
     style.font.name = "Calibri"
     style.font.size = Pt(11)
+    style.paragraph_format.space_before = Pt(0)
+    style.paragraph_format.space_after = Pt(0)
+    style.paragraph_format.line_spacing = 1.0
 
     # Date and header
     doc.add_paragraph("{{ date }}")
