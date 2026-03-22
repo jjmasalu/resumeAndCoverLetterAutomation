@@ -164,6 +164,20 @@ Notes:
 - If macOS prompts when LibreOffice launches, click `Open` or `Allow`
 - Output images, PDFs, and LibreOffice logs are written under `tmp/docs/` by default. Override with `RENDER_OUTDIR=/absolute/path`
 
+To run a repeatable verification pass with page-budget checks:
+
+```bash
+python3 scripts/verify_docx_layout.py /absolute/path/to/file.docx
+python3 scripts/verify_docx_layout.py /absolute/path/to/resume.docx /absolute/path/to/cover-letter.docx --expect resume.docx=1 --expect cover-letter.docx=1 --json
+```
+
+What this verifier does:
+- renders DOCX -> PDF -> PNG via the working macOS LibreOffice path
+- checks that a rendered PDF exists for every input
+- counts PDF pages via `pdfinfo`
+- fails if any document exceeds its allowed page budget
+- records PNG preview paths so the output can be visually reviewed immediately
+
 ## Team Access Gate
 
 The shared team-access code is stored in Supabase and is separate from Supabase Auth.
