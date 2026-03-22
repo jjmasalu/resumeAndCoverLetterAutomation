@@ -2,7 +2,12 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { apiJson, apiUpload } from "@/lib/api";
+import {
+  apiJson,
+  apiUpload,
+  handleTeamAccessRedirect,
+  toApiError,
+} from "@/lib/api";
 import { useApp } from "@/components/AppContext";
 import { createClient } from "@/lib/supabase/client";
 import ChatMessage from "@/components/ChatMessage";
@@ -114,6 +119,12 @@ export default function ChatPage() {
           body: JSON.stringify({ content: userMsg }),
         }
       );
+
+      if (!response.ok) {
+        const error = await toApiError(response);
+        handleTeamAccessRedirect(error, `/chat/${id}`);
+        throw error;
+      }
 
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();

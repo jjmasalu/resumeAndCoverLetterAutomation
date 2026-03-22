@@ -58,6 +58,9 @@ function LoginContent() {
           </div>
           <h1 className="text-xl font-semibold text-text-primary">Welcome back</h1>
           <p className="text-sm text-text-tertiary mt-1">Sign in to continue to {BRAND_NAME}</p>
+          <p className="text-xs text-text-tertiary mt-2">
+            Team-test access also requires a shared access code after sign-in.
+          </p>
         </div>
 
         {/* Google OAuth */}

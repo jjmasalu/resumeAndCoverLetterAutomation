@@ -40,6 +40,7 @@ Two-stage pipeline:
 ### Auth
 - **Supabase Auth** with ES256 JWTs — backend verifies tokens via JWKS endpoint (no shared JWT secret needed)
 - **PyJWT** with `PyJWKClient` for automatic key caching and rotation
+- **Supabase-backed team access gate** — optional shared code layer for short-lived team test environments, with rotation and per-user revocation
 
 ---
 
@@ -111,6 +112,7 @@ Browser (Next.js on Vercel)
 │
 ├── docs/
 │   ├── RUNNING.md                     # Setup and running guide
+│   ├── DEPLOY_TEAM_TEST.md            # Cloud Run deployment + rotatable team access gate
 │   └── IMPROVEMENTS.md                # Known issues and future improvements
 └── README.md
 ```

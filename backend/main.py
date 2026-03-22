@@ -1,11 +1,21 @@
 import logging
 import tempfile
 import os
+from datetime import datetime, timezone
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
 from config import settings
-from auth import get_current_user
+from auth import (
+    TEAM_ACCESS_BLOCKED_DETAIL,
+    TEAM_ACCESS_UNCONFIGURED_DETAIL,
+    INVALID_TEAM_ACCESS_CODE_DETAIL,
+    get_authenticated_user,
+    get_current_user,
+    get_team_access_profile,
+    get_team_access_state,
+    verify_team_access_code,
+)
 from db import supabase
 from models import (
     CreateConversationRequest,
@@ -15,6 +25,7 @@ from models import (
     UpdateProfileRequest,
     UpdateUserContextRequest,
     BulkDeleteConversationsRequest,
+    VerifyTeamAccessRequest,
 )
 from chat import stream_chat, gemini_client
 
@@ -49,6 +60,53 @@ MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.post("/access/verify")
+async def verify_access_code(
+    body: VerifyTeamAccessRequest,
+    user_id: str = Depends(get_authenticated_user),
+):
+    state = get_team_access_state()
+    if not state or not state.get("enabled"):
+        return {"status": "disabled"}
+
+    profile = get_team_access_profile(user_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    if profile.get("team_access_blocked"):
+        raise HTTPException(status_code=403, detail=TEAM_ACCESS_BLOCKED_DETAIL)
+
+    secret = (
+        supabase.table("team_access_secrets")
+        .select("code_hash")
+        .eq("version", state["current_version"])
+        .maybe_single()
+        .execute()
+    )
+    if not secret.data:
+        raise HTTPException(status_code=503, detail=TEAM_ACCESS_UNCONFIGURED_DETAIL)
+
+    if not verify_team_access_code(body.code.strip(), secret.data["code_hash"]):
+        raise HTTPException(status_code=403, detail=INVALID_TEAM_ACCESS_CODE_DETAIL)
+
+    result = (
+        supabase.table("profiles")
+        .update({
+            "team_access_version": state["current_version"],
+            "team_access_verified_at": datetime.now(timezone.utc).isoformat(),
+        })
+        .eq("id", user_id)
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    return {
+        "status": "verified",
+        "current_version": state["current_version"],
+    }
 
 
 # ── Profile ──────────────────────────────────────────────────────────

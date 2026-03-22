@@ -25,6 +25,10 @@ class SendMessageRequest(BaseModel):
     content: str
 
 
+class VerifyTeamAccessRequest(BaseModel):
+    code: str
+
+
 class ConversationResponse(BaseModel):
     id: str
     mode: ConversationMode

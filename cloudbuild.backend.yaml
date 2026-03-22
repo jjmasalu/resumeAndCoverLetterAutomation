@@ -1,0 +1,11 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    dir: backend
+    args:
+      - build
+      - -t
+      - $_IMAGE
+      - .
+
+images:
+  - $_IMAGE

@@ -134,6 +134,16 @@ cd backend
 .venv/bin/python -m pytest tests/ -v
 ```
 
+## Team Access Gate
+
+The shared team-access code is stored in Supabase and is separate from Supabase Auth.
+
+- By default the gate is disabled until you configure the first code.
+- When enabled, users must sign in first and then enter the shared code on `/access-code`.
+- Rotating the code invalidates all previously verified access until the new code is entered.
+
+See [DEPLOY_TEAM_TEST.md](/Users/aham/projects/dev/resumeAndCoverLetterAutomation/docs/DEPLOY_TEAM_TEST.md) for the SQL snippets to enable, rotate, block, and restore access.
+
 ---
 
 ## API Endpoints Reference
