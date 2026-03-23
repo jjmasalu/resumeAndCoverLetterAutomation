@@ -352,6 +352,7 @@ export default function ChatPage() {
   const showCenteredLoader = loadingMessages && messages.length === 0 && !isAwaitingInitialMessage;
   const showEmptyState = !loadingMessages && messages.length === 0 && !isAwaitingInitialMessage;
   const hasStreamingAssistant = streaming && messages[messages.length - 1]?.role === "assistant";
+  const showTypingIndicator = streaming;
 
   // Auto-scroll
   useEffect(() => {
@@ -412,22 +413,30 @@ export default function ChatPage() {
             const persistedTrace = msg.metadata?.activity_trace || [];
             const isStreamingAssistantMessage =
               streaming && i === messages.length - 1 && msg.role === "assistant";
-            const traceToRender = isStreamingAssistantMessage ? activitySteps : persistedTrace;
-            const showTrace = traceToRender.length > 0;
+            const showTrace = !isStreamingAssistantMessage && persistedTrace.length > 0;
 
             return (
               <div key={i}>
                 <ChatMessage role={msg.role} content={msg.content} />
                 {msg.role === "assistant" && showTrace && (
                   <ActivityTimeline
-                    steps={traceToRender}
-                    defaultExpanded={isStreamingAssistantMessage}
+                    steps={persistedTrace}
+                    defaultExpanded={false}
                   />
                 )}
               </div>
             );
           })}
-          {!hasStreamingAssistant && streaming && activitySteps.length > 0 && (
+          {showTypingIndicator && (
+            <div className="mb-3 ml-9">
+              <div className="inline-flex items-center gap-1.5 rounded-2xl border border-border bg-bg-secondary px-3 py-2 text-text-tertiary">
+                <span className="h-2 w-2 animate-bounce rounded-full bg-current [animation-delay:-0.2s]" />
+                <span className="h-2 w-2 animate-bounce rounded-full bg-current [animation-delay:-0.1s]" />
+                <span className="h-2 w-2 animate-bounce rounded-full bg-current" />
+              </div>
+            </div>
+          )}
+          {streaming && activitySteps.length > 0 && (
             <ActivityTimeline steps={activitySteps} defaultExpanded />
           )}
           {jobResults.map((j, i) => (

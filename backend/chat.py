@@ -786,6 +786,46 @@ Tool summary:
     return _deterministic_tool_only_fallback(executed_tools)
 
 
+def _document_sections_from_args(args: dict) -> dict:
+    sections = args.get("sections")
+    return sections if isinstance(sections, dict) else {}
+
+
+def _ensure_document_job_record(
+    *,
+    user_id: str,
+    conversation_id: str,
+    args: dict,
+) -> str | None:
+    sections = _document_sections_from_args(args)
+    role = str(sections.get("role") or sections.get("title") or "").strip()
+    company = str(sections.get("company") or "").strip() or None
+    doc_type = str(args.get("doc_type", "document")).replace("_", " ").strip()
+    title = role or f"Direct {doc_type} generation"
+    if company and company.lower() not in title.lower():
+        title = f"{title} at {company}"
+
+    summary = str(sections.get("summary") or "").strip()
+    description_lines = [f"Direct {doc_type} generation request"]
+    if role:
+        description_lines.append(f"Role: {role}")
+    if company:
+        description_lines.append(f"Company: {company}")
+    if summary:
+        description_lines.append(f"Summary: {summary[:500]}")
+
+    job_data = supabase.table("jobs").insert({
+        "conversation_id": conversation_id,
+        "user_id": user_id,
+        "title": title,
+        "company": company,
+        "description_md": "\n".join(description_lines),
+    }).execute()
+    if job_data.data:
+        return job_data.data[0]["id"]
+    return None
+
+
 async def _execute_tool(
     function_call: types.FunctionCall,
     user_id: str,
@@ -820,20 +860,28 @@ async def _execute_tool(
             logger.warning("tool_result scrape_job error=%s", result["error"])
     elif name == "generate_document":
         if not job_id:
-            result = {"error": "No job has been scraped yet in this conversation."}
-            logger.warning("tool_result generate_document no job_id")
-        else:
-            result = await tools.generate_document(
-                doc_type=args.get("doc_type", "resume"),
-                sections=args.get("sections", {}),
+            job_id = _ensure_document_job_record(
                 user_id=user_id,
-                job_id=job_id,
-                progress_callback=progress_callback,
+                conversation_id=conversation_id,
+                args=args,
             )
-            if "error" in result:
-                logger.error("tool_result generate_document error=%s", result["error"])
+            if job_id:
+                logger.info("tool_result generate_document created synthetic job_id=%s", job_id[:8])
             else:
-                logger.info("tool_result generate_document doc_id=%s", result.get("document_id", "?")[:8])
+                logger.warning("tool_result generate_document no job_id")
+                return {"error": "Unable to create a job record for this document request."}, job_id
+
+        result = await tools.generate_document(
+            doc_type=args.get("doc_type", "resume"),
+            sections=_document_sections_from_args(args),
+            user_id=user_id,
+            job_id=job_id,
+            progress_callback=progress_callback,
+        )
+        if "error" in result:
+            logger.error("tool_result generate_document error=%s", result["error"])
+        else:
+            logger.info("tool_result generate_document doc_id=%s", result.get("document_id", "?")[:8])
     elif name == "save_user_context":
         result = await tools.save_user_context(
             user_id=user_id,

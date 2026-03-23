@@ -1,4 +1,5 @@
 import chat
+from types import SimpleNamespace
 
 
 def test_heuristic_turn_router_disables_tools_for_greeting():
@@ -241,3 +242,58 @@ def test_generate_tool_only_followup_text_falls_back_when_model_is_empty(monkeyp
     assert reply == (
         "I saved that information to your profile memory so I can use it in future applications."
     )
+
+
+class _DummyJobsTable:
+    def __init__(self):
+        self.inserted = []
+
+    def insert(self, payload):
+        self.inserted.append(payload)
+        return self
+
+    def execute(self):
+        return SimpleNamespace(data=[{"id": "job-synth-1"}])
+
+
+class _DummySupabase:
+    def __init__(self):
+        self.jobs = _DummyJobsTable()
+
+    def table(self, name: str):
+        assert name == "jobs"
+        return self.jobs
+
+
+def test_ensure_document_job_record_builds_synthetic_job(monkeypatch):
+    dummy_supabase = _DummySupabase()
+    monkeypatch.setattr(chat, "supabase", dummy_supabase)
+
+    job_id = chat._ensure_document_job_record(
+        user_id="user-1",
+        conversation_id="conv-1",
+        args={
+            "doc_type": "resume",
+            "sections": {
+                "title": "Product Designer",
+                "company": "North Coast",
+                "summary": "Design systems and interaction design across web and mobile.",
+            },
+        },
+    )
+
+    assert job_id == "job-synth-1"
+    assert dummy_supabase.jobs.inserted == [
+        {
+            "conversation_id": "conv-1",
+            "user_id": "user-1",
+            "title": "Product Designer at North Coast",
+            "company": "North Coast",
+            "description_md": (
+                "Direct resume generation request\n"
+                "Role: Product Designer\n"
+                "Company: North Coast\n"
+                "Summary: Design systems and interaction design across web and mobile."
+            ),
+        }
+    ]
