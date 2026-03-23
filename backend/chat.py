@@ -55,7 +55,7 @@ GENERATE_DOCUMENT_DECLARATION = types.FunctionDeclaration(
             "doc_type": types.Schema(type=types.Type.STRING, description="'resume' or 'cover_letter'"),
             "sections": types.Schema(
                 type=types.Type.OBJECT,
-                description="Structured content for the document. Resume: {name, title, summary, experiences: [{company, role, dates, bullets}], skills, education}. Cover letter: {name, date, company, hiring_manager, role, paragraphs: [str]}. Optional design input: theme_id in {'classic_professional','technical_compact','executive_clean'}.",
+                description="Structured content for the document. Resume: {name, title, summary, experiences: [{company, role, dates, bullets}], skills, education}. Cover letter: {name, date, company, hiring_manager, role, paragraphs: [str]}. Optional design inputs: theme_id in {'classic_professional','technical_compact','executive_clean','ats_minimal'} and layout_strategy in {'ats_safe','balanced','executive','compact'}.",
             ),
         },
         required=["doc_type", "sections"],
@@ -127,11 +127,18 @@ Be conversational and helpful. Ask specific questions based on what the job requ
 Cover letters must fit on one page. When preparing sections for generate_document, keep the cover letter to three concise body paragraphs plus a brief closing paragraph, avoid repeating resume bullets verbatim, and keep the total body around 220-300 words.
 
 If you choose a design direction, do it by selecting an approved `theme_id` inside `sections`. Available themes:
+- `ats_minimal` for strict ATS-safe simplicity with minimal styling
 - `classic_professional` for balanced, conservative presentation
 - `technical_compact` for denser technical resumes and tighter page budgets
 - `executive_clean` for leadership-oriented applications with a more formal, editorial hierarchy
 
-Do not invent custom themes or arbitrary formatting instructions. Pick from the approved theme ids only when it adds value.
+You may also set `layout_strategy` in `sections` to one of:
+- `ats_safe`
+- `balanced`
+- `executive`
+- `compact`
+
+Use `layout_strategy` when you want the engine to choose the exact theme deterministically within that direction. Do not invent custom themes or arbitrary formatting instructions.
 
 IMPORTANT: When you generate a document, do NOT paste the download URL in your response. The UI will automatically show a download card. Just tell the user the document is ready and offer to make adjustments or generate additional documents."""
 
@@ -156,7 +163,7 @@ response. The UI will automatically show a download card.
 
 When generating a cover letter, keep it to one page: three concise body paragraphs plus a brief closing paragraph, and avoid repeating the resume verbatim.
 
-If a theme choice would help, set `theme_id` in `sections` to one of `classic_professional`, `technical_compact`, or `executive_clean`. Do not invent other theme names."""
+If a theme choice would help, set `theme_id` in `sections` to one of `ats_minimal`, `classic_professional`, `technical_compact`, or `executive_clean`, or set `layout_strategy` to one of `ats_safe`, `balanced`, `executive`, or `compact`. Do not invent other theme names or strategies."""
 
 FIND_JOBS_PROMPT = """You are a career assistant helping the user find jobs that match their profile.
 
@@ -173,7 +180,7 @@ Be proactive in suggesting roles based on the user's skills and experience.
 
 When generating a cover letter, keep it to one page: three concise body paragraphs plus a brief closing paragraph, and avoid repeating the resume verbatim.
 
-If a theme choice would help, set `theme_id` in `sections` to one of `classic_professional`, `technical_compact`, or `executive_clean`. Do not invent other theme names.
+If a theme choice would help, set `theme_id` in `sections` to one of `ats_minimal`, `classic_professional`, `technical_compact`, or `executive_clean`, or set `layout_strategy` to one of `ats_safe`, `balanced`, `executive`, or `compact`. Do not invent other theme names or strategies.
 
 IMPORTANT: When you generate a document, do NOT paste the download URL in your
 response. The UI will automatically show a download card."""

@@ -1,0 +1,61 @@
+{
+  "id": "resume_ats_minimal_balanced",
+  "doc_type": "resume",
+  "input": {
+    "name": "Taylor Brooks",
+    "title": "Operations Coordinator",
+    "layout_strategy": "ats_safe",
+    "summary": "Operations coordinator with experience supporting scheduling, reporting, compliance, and documentation workflows.",
+    "skills": {
+      "Tools": ["Excel", "Google Workspace", "CRM"],
+      "Strengths": ["Scheduling", "Reporting", "Documentation"]
+    },
+    "education": [
+      {
+        "degree": "Diploma in Business Administration",
+        "institution": "College of the North Atlantic",
+        "dates": "2018-2020"
+      }
+    ],
+    "experiences": [
+      {
+        "company": "Northview Health",
+        "role": "Operations Coordinator",
+        "dates": "2022 to Present",
+        "bullets": [
+          "Coordinated scheduling and documentation across multiple teams.",
+          "Maintained compliance records and weekly reporting workflows."
+        ]
+      },
+      {
+        "company": "Harbour Services",
+        "role": "Administrative Assistant",
+        "dates": "2020 to 2022",
+        "bullets": [
+          "Prepared reports and maintained client records.",
+          "Supported office operations and calendar management."
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "theme_id": "ats_minimal",
+    "page_budget": 1,
+    "verification_status": "passed",
+    "attempt_count": 1,
+    "repair_actions": [],
+    "layout_metrics": {
+      "experience_count": 2,
+      "bullet_count": 4
+    },
+    "required_text": [
+      "Taylor Brooks",
+      "Operations Coordinator",
+      "Summary",
+      "Experience",
+      "Skills",
+      "Education",
+      "Northview Health"
+    ]
+  }
+}

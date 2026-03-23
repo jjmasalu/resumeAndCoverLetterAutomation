@@ -99,6 +99,38 @@ def test_build_document_plan_chooses_executive_theme_for_leadership_resume():
     assert plan.repair_history == []
 
 
+def test_build_document_plan_chooses_ats_minimal_for_ats_safe_strategy():
+    plan = document_engine.build_document_plan(
+        "resume",
+        {
+            "name": "Taylor Brooks",
+            "title": "Operations Coordinator",
+            "layout_strategy": "ats_safe",
+            "summary": "Operations coordinator with experience supporting scheduling, compliance, and cross-team administration workflows.",
+            "skills": {
+                "Tools": ["Excel", "Google Workspace", "CRM"],
+                "Strengths": ["Scheduling", "Documentation", "Reporting"],
+            },
+            "education": "Diploma in Business Administration",
+            "experiences": [
+                {
+                    "company": "Northview Health",
+                    "role": "Operations Coordinator",
+                    "dates": "2022 to Present",
+                    "bullets": [
+                        "Coordinated scheduling and documentation across multiple teams.",
+                        "Maintained compliance records and reporting workflows.",
+                    ],
+                }
+            ],
+        },
+    )
+
+    assert plan.theme_id == "ats_minimal"
+    assert plan.verification["status"] == "passed"
+    assert plan.repair_history == []
+
+
 def test_build_document_plan_repairs_dense_resume_until_within_budget():
     plan = document_engine.build_document_plan(
         "resume",
@@ -254,3 +286,32 @@ def test_render_document_applies_executive_cover_letter_date_alignment():
 
     assert plan.theme_id == "executive_clean"
     assert document.paragraphs[0].alignment == WD_ALIGN_PARAGRAPH.RIGHT
+
+
+def test_render_document_applies_ats_minimal_header_alignment():
+    plan = document_engine.build_document_plan(
+        "resume",
+        {
+            "name": "Taylor Brooks",
+            "title": "Operations Coordinator",
+            "layout_strategy": "ats_safe",
+            "summary": "Supports operations, scheduling, and documentation workflows.",
+            "skills": "Excel, Reporting, Scheduling",
+            "education": "Diploma in Business Administration",
+            "experiences": [
+                {
+                    "company": "Northview Health",
+                    "role": "Operations Coordinator",
+                    "dates": "2022 to Present",
+                    "bullets": ["Coordinated schedules.", "Maintained compliance records."],
+                }
+            ],
+        },
+    )
+
+    rendered = document_engine.render_document(plan)
+    document = Document(io.BytesIO(rendered))
+
+    assert plan.theme_id == "ats_minimal"
+    assert document.paragraphs[0].alignment == WD_ALIGN_PARAGRAPH.LEFT
+    assert document.paragraphs[2].text == "Summary"

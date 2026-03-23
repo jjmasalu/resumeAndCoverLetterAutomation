@@ -47,6 +47,7 @@ the product, not a prompt that happens to end in a `.docx`.
 The model is allowed to choose from a controlled catalog:
 
 - `theme_id`
+- `layout_strategy`
 - density level
 - emphasis strategy
 - section priority
@@ -129,9 +130,15 @@ Implemented now:
 
 - deterministic `DocumentPlan` construction for `resume` and `cover_letter`
 - approved theme catalog with:
+  - `ats_minimal`
   - `classic_professional`
   - `technical_compact`
   - `executive_clean`
+- deterministic `layout_strategy` support with:
+  - `ats_safe`
+  - `balanced`
+  - `executive`
+  - `compact`
 - normalization and compaction rules for:
   - resume summary
   - resume skills
@@ -144,6 +151,7 @@ Implemented now:
 - named regression fixtures plus a local regression runner for fixture output generation
 - backend contract that allows the model to select only approved `theme_id` values
 - deterministic leadership-aware theme selection for balanced executive-style documents
+- deterministic ATS-safe selection for simplicity-first roles and workflows
 - theme-specific rendering differences that stay within safe flow-layout primitives
 
 Not implemented yet:
@@ -226,6 +234,7 @@ Theme choice should be based on:
 
 But the available outputs are constrained to audited options, for example:
 
+- `ats_minimal`
 - `technical_compact`
 - `executive_clean`
 - `modern_minimal`
@@ -238,6 +247,17 @@ Each theme has deterministic variants:
 - `spacious`
 
 The model chooses from these; it does not invent a new theme in production.
+
+When the exact theme should remain engine-controlled, the model can choose a
+`layout_strategy` instead of a `theme_id`. For example:
+
+- `ats_safe`
+- `balanced`
+- `executive`
+- `compact`
+
+The engine then resolves the concrete theme deterministically within that
+strategy.
 
 ## Stage 3: Composition
 

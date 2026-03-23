@@ -21,6 +21,7 @@ SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[.!?])\s+")
 class ThemeSpec:
     theme_id: str
     density: str
+    ats_profile: str
     body_font: str
     body_size_pt: float
     body_color: tuple[int, int, int]
@@ -82,6 +83,7 @@ THEMES: dict[str, ThemeSpec] = {
     "classic_professional": ThemeSpec(
         theme_id="classic_professional",
         density="balanced",
+        ats_profile="safe",
         body_font="Calibri",
         body_size_pt=11.0,
         body_color=(0, 0, 0),
@@ -112,6 +114,7 @@ THEMES: dict[str, ThemeSpec] = {
     "technical_compact": ThemeSpec(
         theme_id="technical_compact",
         density="compact",
+        ats_profile="safe",
         body_font="Calibri",
         body_size_pt=10.5,
         body_color=(15, 15, 15),
@@ -142,6 +145,7 @@ THEMES: dict[str, ThemeSpec] = {
     "executive_clean": ThemeSpec(
         theme_id="executive_clean",
         density="balanced",
+        ats_profile="safe",
         body_font="Cambria",
         body_size_pt=10.8,
         body_color=(26, 31, 36),
@@ -168,6 +172,37 @@ THEMES: dict[str, ThemeSpec] = {
         cover_letter_date_alignment="right",
         heading_case="upper",
         title_italic=True,
+    ),
+    "ats_minimal": ThemeSpec(
+        theme_id="ats_minimal",
+        density="balanced",
+        ats_profile="strict",
+        body_font="Arial",
+        body_size_pt=11.0,
+        body_color=(0, 0, 0),
+        heading_font="Arial",
+        heading_size_pt=11.0,
+        heading_color=(0, 0, 0),
+        name_size_pt=20.0,
+        title_size_pt=11.0,
+        title_color=(32, 32, 32),
+        top_margin_in=0.8,
+        right_margin_in=0.95,
+        bottom_margin_in=0.8,
+        left_margin_in=0.95,
+        line_spacing=1.0,
+        paragraph_after_pt=3.0,
+        section_before_pt=8.0,
+        section_after_pt=3.0,
+        bullet_indent_in=0.2,
+        max_resume_experiences=3,
+        max_bullets_per_experience=2,
+        summary_target_chars=260,
+        skills_target_chars=210,
+        resume_header_alignment="left",
+        cover_letter_date_alignment="left",
+        heading_case="title",
+        title_italic=False,
     ),
 }
 
@@ -287,6 +322,39 @@ def _has_leadership_signal(normalized_sections: dict) -> bool:
         text_parts.extend(str(bullet) for bullet in experience.get("bullets", []))
     combined = " ".join(_clean_whitespace(part).lower() for part in text_parts if part)
     return any(marker in combined for marker in leadership_markers)
+
+
+def _has_ats_simplicity_signal(normalized_sections: dict) -> bool:
+    ats_markers = (
+        "analyst",
+        "accountant",
+        "coordinator",
+        "administrator",
+        "specialist",
+        "operations",
+        "compliance",
+        "government",
+        "public sector",
+        "healthcare",
+        "support",
+        "customer service",
+        "case manager",
+    )
+    text_parts = [
+        normalized_sections.get("title", ""),
+        normalized_sections.get("summary", ""),
+        normalized_sections.get("role", ""),
+        normalized_sections.get("company", ""),
+    ]
+    combined = " ".join(_clean_whitespace(part).lower() for part in text_parts if part)
+    return any(marker in combined for marker in ats_markers)
+
+
+def _requested_layout_strategy(normalized_sections: dict) -> str | None:
+    strategy = str(normalized_sections.get("layout_strategy", "")).strip().lower()
+    if strategy in {"ats_safe", "balanced", "executive", "compact"}:
+        return strategy
+    return None
 
 
 def _fit_cover_letter_paragraphs(
@@ -424,6 +492,7 @@ def normalize_document_sections(doc_type: str, sections: dict) -> dict:
         normalized["education"] = _format_education_entries(normalized.get("education"))
         normalized["experiences"] = _normalize_resume_experiences(normalized.get("experiences"))
         normalized["theme_id"] = _list_to_text(normalized.get("theme_id") or normalized.get("theme"))
+        normalized["layout_strategy"] = _list_to_text(normalized.get("layout_strategy"))
         return normalized
 
     if doc_type == "cover_letter":
@@ -434,6 +503,7 @@ def normalize_document_sections(doc_type: str, sections: dict) -> dict:
         normalized["role"] = _list_to_text(normalized.get("role"))
         normalized["paragraphs"] = _normalize_cover_letter_paragraphs(normalized.get("paragraphs"))
         normalized["theme_id"] = _list_to_text(normalized.get("theme_id") or normalized.get("theme"))
+        normalized["layout_strategy"] = _list_to_text(normalized.get("layout_strategy"))
         return normalized
 
     return normalized
@@ -444,12 +514,24 @@ def _choose_theme(doc_type: str, normalized_sections: dict) -> ThemeSpec:
     if requested in THEMES:
         return THEMES[requested]
 
+    requested_strategy = _requested_layout_strategy(normalized_sections)
     has_leadership_signal = _has_leadership_signal(normalized_sections)
+    has_ats_signal = _has_ats_simplicity_signal(normalized_sections)
 
     if doc_type == "cover_letter":
         total_chars = sum(len(paragraph) for paragraph in normalized_sections.get("paragraphs", []))
+        if requested_strategy == "compact":
+            return THEMES["technical_compact"]
+        if requested_strategy == "executive":
+            return THEMES["executive_clean"]
+        if requested_strategy == "balanced":
+            return THEMES["classic_professional"]
+        if requested_strategy == "ats_safe":
+            return THEMES["technical_compact"] if total_chars > 780 else THEMES["ats_minimal"]
         if total_chars > 780:
             return THEMES["technical_compact"]
+        if has_ats_signal:
+            return THEMES["ats_minimal"]
         if has_leadership_signal:
             return THEMES["executive_clean"]
         return THEMES["classic_professional"]
@@ -462,8 +544,20 @@ def _choose_theme(doc_type: str, normalized_sections: dict) -> ThemeSpec:
         + len(experiences) * 2
         + bullet_count
     )
+    if requested_strategy == "compact":
+        return THEMES["technical_compact"]
+    if requested_strategy == "executive":
+        return THEMES["executive_clean"]
+    if requested_strategy == "balanced":
+        return THEMES["classic_professional"]
+    if requested_strategy == "ats_safe":
+        if density_score >= 12:
+            return THEMES["technical_compact"]
+        return THEMES["ats_minimal"]
     if density_score >= 12:
         return THEMES["technical_compact"]
+    if has_ats_signal:
+        return THEMES["ats_minimal"]
     if has_leadership_signal:
         return THEMES["executive_clean"]
     if density_score >= 10:
