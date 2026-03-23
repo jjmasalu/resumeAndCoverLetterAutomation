@@ -218,6 +218,36 @@ export default function ChatPage() {
       let assistantContent = "";
       let buffer = "";
 
+      const consumeSseBuffer = (flushTrailing = false) => {
+        const rawEvents = buffer.split("\n\n");
+        buffer = flushTrailing ? "" : rawEvents.pop() || "";
+
+        for (const rawEvent of rawEvents) {
+          const lines = rawEvent.split("\n");
+          let eventType = "message";
+          const dataLines: string[] = [];
+
+          for (const line of lines) {
+            if (line.startsWith("event: ")) {
+              eventType = line.slice(7).trim();
+            } else if (line.startsWith("data: ")) {
+              dataLines.push(line.slice(6));
+            }
+          }
+
+          if (dataLines.length === 0) {
+            continue;
+          }
+
+          try {
+            const data = JSON.parse(dataLines.join("\n"));
+            handleSseEvent(eventType, data);
+          } catch {
+            // Skip malformed JSON
+          }
+        }
+      };
+
       const handleSseEvent = (eventType: string, data: unknown) => {
         if (eventType === "message") {
           const chunk =
@@ -273,35 +303,14 @@ export default function ChatPage() {
           if (done) break;
 
           buffer += decoder.decode(value, { stream: true });
-          const rawEvents = buffer.split("\n\n");
-          buffer = rawEvents.pop() || "";
-
-          for (const rawEvent of rawEvents) {
-            const lines = rawEvent.split("\n");
-            let eventType = "message";
-            const dataLines: string[] = [];
-
-            for (const line of lines) {
-              if (line.startsWith("event: ")) {
-                eventType = line.slice(7).trim();
-              } else if (line.startsWith("data: ")) {
-                dataLines.push(line.slice(6));
-              }
-            }
-
-            if (dataLines.length === 0) {
-              continue;
-            }
-
-            try {
-              const data = JSON.parse(dataLines.join("\n"));
-              handleSseEvent(eventType, data);
-            } catch {
-              // Skip malformed JSON
-            }
-          }
+          consumeSseBuffer();
         }
+        buffer += decoder.decode();
+      } else {
+        buffer += await response.text();
       }
+
+      consumeSseBuffer(true);
     } catch (err) {
       console.error("Stream error:", err);
     } finally {
