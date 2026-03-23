@@ -8,6 +8,7 @@ interface DownloadCardProps {
   documentId: string;
   filename: string;
   variantLabel?: string | null;
+  embedded?: boolean;
 }
 
 export default function DownloadCard({
@@ -15,6 +16,7 @@ export default function DownloadCard({
   documentId,
   filename,
   variantLabel,
+  embedded = false,
 }: DownloadCardProps) {
   const label = docType === "resume" ? "Resume" : "Cover Letter";
   const variantHint =
@@ -36,7 +38,11 @@ export default function DownloadCard({
   };
 
   return (
-    <div className="ml-9 mb-4 flex items-center gap-3 rounded-lg border border-border border-l-2 border-l-accent bg-bg-secondary p-3">
+    <div
+      className={`flex items-center gap-3 rounded-lg border border-border border-l-2 border-l-accent bg-bg-secondary p-3 ${
+        embedded ? "" : "ml-9 mb-4"
+      }`}
+    >
       <svg
         className="h-6 w-6 flex-shrink-0 text-accent"
         fill="none"

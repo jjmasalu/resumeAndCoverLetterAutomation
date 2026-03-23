@@ -3,6 +3,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { apiJson, apiFetch, downloadGeneratedDocument } from "@/lib/api";
+import {
+  documentBundleDescription,
+  documentBundleTitle,
+  groupDocumentsByVariant,
+} from "@/lib/document-groups";
 import { useApp } from "@/components/AppContext";
 import ConfirmDialog from "@/components/ConfirmDialog";
 
@@ -139,6 +144,95 @@ export default function ProfilePage() {
     onConfirm: () => {},
     loading: false,
   });
+
+  const renderGeneratedDocumentRow = (
+    doc: ProfileData["generated_documents"][number],
+    compact = false
+  ) => (
+    <div
+      key={doc.id}
+      className={`flex items-center gap-3 rounded-lg border border-border px-4 py-3 ${
+        compact ? "bg-bg-primary" : "bg-bg-secondary"
+      }`}
+    >
+      <div className="w-8 h-8 rounded-lg bg-bg-tertiary flex items-center justify-center flex-shrink-0">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          className="text-success"
+        >
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <polyline points="14 2 14 8 20 8" />
+          <line x1="16" y1="13" x2="8" y2="13" />
+          <line x1="16" y1="17" x2="8" y2="17" />
+        </svg>
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="truncate text-sm text-text-primary">
+          {doc.filename ||
+            (doc.doc_type === "cover_letter" ? "Cover Letter" : "Resume")}
+        </p>
+        <p className="text-[11px] text-text-tertiary">
+          {doc.doc_type === "cover_letter" ? "Cover Letter" : "Resume"}
+          {doc.variant_label ? ` · ${doc.variant_label}` : ""}
+          {" · "}
+          {new Date(doc.created_at).toLocaleDateString(undefined, {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+          })}
+        </p>
+      </div>
+      <div className="flex items-center gap-1 flex-shrink-0">
+        <button
+          type="button"
+          onClick={() =>
+            handleDownloadDocument(
+              doc.id,
+              doc.filename ||
+                `${doc.doc_type === "cover_letter" ? "cover-letter" : "resume"}.docx`
+            )
+          }
+          className="p-1.5 rounded hover:bg-bg-tertiary transition text-text-tertiary hover:text-accent"
+          title="Download"
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+        </button>
+        <button
+          onClick={() => handleDeleteDocument(doc.id)}
+          className="p-1.5 rounded hover:bg-danger/10 transition text-text-tertiary hover:text-danger"
+          title="Delete"
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
 
   const fetchProfile = useCallback(async () => {
     try {
@@ -314,6 +408,7 @@ export default function ProfilePage() {
 
   const { profile, user_context, uploaded_files, generated_documents } = data;
   const displayLetter = (profile.full_name || profile.email || "U")[0].toUpperCase();
+  const generatedDocumentGroups = groupDocumentsByVariant(generated_documents);
 
   return (
     <div className="flex-1 overflow-y-auto px-6 py-6">
@@ -587,92 +682,30 @@ export default function ProfilePage() {
             </p>
           ) : (
             <div className="space-y-2">
-              {generated_documents.map((doc) => (
-                <div
-                  key={doc.id}
-                  className="flex items-center gap-3 bg-bg-secondary border border-border rounded-lg px-4 py-3"
-                >
-                  {/* Doc icon */}
-                  <div className="w-8 h-8 rounded-lg bg-bg-tertiary flex items-center justify-center flex-shrink-0">
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      className="text-success"
-                    >
-                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                      <polyline points="14 2 14 8 20 8" />
-                      <line x1="16" y1="13" x2="8" y2="13" />
-                      <line x1="16" y1="17" x2="8" y2="17" />
-                    </svg>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="truncate text-sm text-text-primary">
-                      {doc.filename ||
-                        (doc.doc_type === "cover_letter"
-                          ? "Cover Letter"
-                          : "Resume")}
+              {generatedDocumentGroups.map((group) => {
+                if (!group.isVariantBundle) {
+                  return renderGeneratedDocumentRow(group.items[0]);
+                }
+
+                return (
+                  <div
+                    key={group.key}
+                    className="rounded-lg border border-border bg-bg-secondary/60 p-3"
+                  >
+                    <p className="text-sm font-medium text-text-primary">
+                      {documentBundleTitle(group.docType)}
                     </p>
-                    <p className="text-[11px] text-text-tertiary">
-                      {doc.doc_type === "cover_letter" ? "Cover Letter" : "Resume"}
-                      {doc.variant_label ? ` · ${doc.variant_label}` : ""}
-                      {" · "}
-                      {new Date(doc.created_at).toLocaleDateString(undefined, {
-                        month: "short",
-                        day: "numeric",
-                        year: "numeric",
-                      })}
+                    <p className="mt-1 text-[11px] text-text-tertiary">
+                      {documentBundleDescription(group.docType)}
                     </p>
+                    <div className="mt-3 space-y-2">
+                      {group.items.map((doc) =>
+                        renderGeneratedDocumentRow(doc, true)
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleDownloadDocument(
-                          doc.id,
-                          doc.filename ||
-                            `${doc.doc_type === "cover_letter" ? "cover-letter" : "resume"}.docx`
-                        )
-                      }
-                      className="p-1.5 rounded hover:bg-bg-tertiary transition text-text-tertiary hover:text-accent"
-                      title="Download"
-                    >
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                      >
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                        <polyline points="7 10 12 15 17 10" />
-                        <line x1="12" y1="15" x2="12" y2="3" />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={() => handleDeleteDocument(doc.id)}
-                      className="p-1.5 rounded hover:bg-danger/10 transition text-text-tertiary hover:text-danger"
-                      title="Delete"
-                    >
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                      >
-                        <polyline points="3 6 5 6 21 6" />
-                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>

@@ -12,6 +12,11 @@ import {
   clearPendingChatMessage,
   readPendingChatMessage,
 } from "@/lib/pending-chat";
+import {
+  documentBundleDescription,
+  documentBundleTitle,
+  groupDocumentsByVariant,
+} from "@/lib/document-groups";
 import { useApp } from "@/components/AppContext";
 import { createClient } from "@/lib/supabase/client";
 import ChatMessage from "@/components/ChatMessage";
@@ -394,6 +399,7 @@ export default function ChatPage() {
   const showEmptyState = !loadingMessages && messages.length === 0 && !isAwaitingInitialMessage;
   const hasStreamingAssistant = streaming && messages[messages.length - 1]?.role === "assistant";
   const showTypingIndicator = streaming;
+  const documentGroups = groupDocumentsByVariant(documents);
 
   // Auto-scroll
   useEffect(() => {
@@ -495,15 +501,46 @@ export default function ChatPage() {
               }}
             />
           ))}
-          {documents.map((d) => (
-            <DownloadCard
-              key={d.document_id}
-              docType={d.doc_type}
-              documentId={d.document_id}
-              filename={d.filename || `${d.doc_type === "cover_letter" ? "cover-letter" : "resume"}.docx`}
-              variantLabel={d.variant_label}
-            />
-          ))}
+          {documentGroups.map((group) => {
+            if (!group.isVariantBundle) {
+              const d = group.items[0];
+              return (
+                <DownloadCard
+                  key={d.document_id}
+                  docType={d.doc_type}
+                  documentId={d.document_id}
+                  filename={d.filename || `${d.doc_type === "cover_letter" ? "cover-letter" : "resume"}.docx`}
+                  variantLabel={d.variant_label}
+                />
+              );
+            }
+
+            return (
+              <div
+                key={group.key}
+                className="ml-9 mb-4 rounded-lg border border-border bg-bg-secondary/60 p-3"
+              >
+                <p className="text-sm font-medium text-text-primary">
+                  {documentBundleTitle(group.docType)}
+                </p>
+                <p className="mt-1 text-[11px] text-text-tertiary">
+                  {documentBundleDescription(group.docType)}
+                </p>
+                <div className="mt-3 space-y-3">
+                  {group.items.map((d) => (
+                    <DownloadCard
+                      key={d.document_id}
+                      docType={d.doc_type}
+                      documentId={d.document_id}
+                      filename={d.filename || `${d.doc_type === "cover_letter" ? "cover-letter" : "resume"}.docx`}
+                      variantLabel={d.variant_label}
+                      embedded
+                    />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
           <div ref={bottomRef} />
         </div>
       </div>
