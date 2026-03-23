@@ -34,7 +34,7 @@ interface ProfileData {
     conversation_id: string;
   }>;
   generated_documents: Array<{
-    id: string;
+    document_id: string;
     doc_type: string;
     filename?: string;
     file_url: string;
@@ -157,7 +157,7 @@ export default function ProfilePage() {
     compact = false
   ) => (
     <div
-      key={doc.id}
+      key={doc.document_id}
       className={`flex items-center gap-3 rounded-lg border border-border px-4 py-3 ${
         compact ? "bg-bg-primary" : "bg-bg-secondary"
       }`}
@@ -199,7 +199,7 @@ export default function ProfilePage() {
           type="button"
           onClick={() =>
             handleDownloadDocument(
-              doc.id,
+              doc.document_id,
               doc.filename ||
                 `${doc.doc_type === "cover_letter" ? "cover-letter" : "resume"}.docx`
             )
@@ -223,8 +223,8 @@ export default function ProfilePage() {
         {doc.can_regenerate && (
           <button
             type="button"
-            onClick={() => void handleRegenerateDocument(doc.id)}
-            disabled={regeneratingDocumentId === doc.id}
+            onClick={() => void handleRegenerateDocument(doc.document_id)}
+            disabled={regeneratingDocumentId === doc.document_id}
             className="p-1.5 rounded hover:bg-bg-tertiary transition text-text-tertiary hover:text-accent disabled:cursor-wait disabled:opacity-70"
             title="Regenerate"
           >
@@ -242,7 +242,7 @@ export default function ProfilePage() {
           </button>
         )}
         <button
-          onClick={() => handleDeleteDocument(doc.id)}
+          onClick={() => handleDeleteDocument(doc.document_id)}
           className="p-1.5 rounded hover:bg-danger/10 transition text-text-tertiary hover:text-danger"
           title="Delete"
         >
