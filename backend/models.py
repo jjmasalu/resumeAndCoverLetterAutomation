@@ -51,6 +51,7 @@ class DocumentResponse(BaseModel):
     id: str
     job_id: str
     doc_type: DocType
+    filename: str | None = None
     file_url: str
     created_at: str
 

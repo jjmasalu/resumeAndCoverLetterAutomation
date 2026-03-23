@@ -1,19 +1,36 @@
+"use client";
+
+import { useState } from "react";
+import { downloadGeneratedDocument } from "@/lib/api";
+
 interface DownloadCardProps {
   docType: string;
-  downloadUrl: string;
+  documentId: string;
+  filename: string;
 }
 
-export default function DownloadCard({ docType, downloadUrl }: DownloadCardProps) {
+export default function DownloadCard({
+  docType,
+  documentId,
+  filename,
+}: DownloadCardProps) {
   const label = docType === "resume" ? "Resume" : "Cover Letter";
-  const fileName = `${docType || "document"}.docx`;
-  const href = downloadUrl
-    ? `${downloadUrl}&download=${encodeURIComponent(fileName)}`
-    : "#";
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownload = async () => {
+    if (downloading) return;
+    try {
+      setDownloading(true);
+      await downloadGeneratedDocument(documentId, filename);
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   return (
-    <div className="ml-9 mb-4 flex items-center gap-3 p-3 bg-bg-secondary border border-border rounded-lg border-l-2 border-l-accent">
+    <div className="ml-9 mb-4 flex items-center gap-3 rounded-lg border border-border border-l-2 border-l-accent bg-bg-secondary p-3">
       <svg
-        className="w-6 h-6 text-accent flex-shrink-0"
+        className="h-6 w-6 flex-shrink-0 text-accent"
         fill="none"
         stroke="currentColor"
         viewBox="0 0 24 24"
@@ -27,13 +44,15 @@ export default function DownloadCard({ docType, downloadUrl }: DownloadCardProps
       </svg>
       <div>
         <p className="text-sm font-medium text-text-primary">{label} ready</p>
-        <a
-          href={href}
-          download={fileName}
-          className="text-xs text-accent hover:underline"
+        <p className="max-w-[28rem] truncate text-xs text-text-tertiary">{filename}</p>
+        <button
+          type="button"
+          onClick={handleDownload}
+          disabled={downloading}
+          className="text-left text-xs text-accent transition hover:underline disabled:cursor-wait disabled:opacity-70"
         >
-          Download .docx
-        </a>
+          {downloading ? "Preparing download..." : "Download file"}
+        </button>
       </div>
     </div>
   );

@@ -106,13 +106,14 @@ Resume/cover letter outputs. Multiple per job (resume + cover letter).
 - `job_id` (uuid, FK → jobs)
 - `user_id` (uuid, FK → profiles)
 - `doc_type` (text) — "resume", "cover_letter"
+- `filename` (text) — stored semantic download name, versioned per user when needed
 - `file_url` (text) — Supabase Storage path (bucket: `documents`, per-user prefix)
 - `created_at` (timestamptz)
 
 ### Supabase Storage
 - Bucket: `documents`
 - Path: `{user_id}/{document_id}.docx`
-- Access: private, served via signed URLs (valid 1 hour)
+- Access: private, downloaded through the authenticated backend endpoint; signed URLs are still available internally for storage access and fallback flows
 
 ## Backend (FastAPI on Cloud Run)
 
@@ -121,7 +122,7 @@ Resume/cover letter outputs. Multiple per job (resume + cover letter).
 - `POST /conversations/{id}/messages` — send message, get streamed SSE response
 - `GET /conversations` — list user's conversations
 - `GET /conversations/{id}` — get conversation with messages
-- `GET /documents/{id}/download` — returns signed URL for .docx download
+- `GET /documents/{id}/download` — streams the authenticated `.docx` download with a submission-ready filename
 
 ### Gemini Function Declarations
 
@@ -137,7 +138,7 @@ Four tools declared via Gemini's native function calling:
 → Calls docxtpl. `sections` is a dict matching template variables:
 - Resume: `{ name, title, summary, experiences: [{ company, role, dates, bullets }], skills, education }`
 - Cover letter: `{ name, date, company, hiring_manager, role, paragraphs: [str] }`
-→ Returns `{ document_id, download_url }`.
+→ Returns `{ document_id, filename, download_url }`.
 
 **`save_user_context(category: str, content: dict)`**
 → Upserts to `user_context` table. Gemini invokes this when it learns something worth remembering (e.g., user mentions 5 years of Python experience). This keeps context extraction on-demand rather than running after every message, avoiding doubled API costs.
@@ -152,7 +153,7 @@ event: status       # Tool execution status
 data: {"tool": "search_jobs", "state": "running"|"done"}
 
 event: document     # Document ready for download
-data: {"document_id": "...", "doc_type": "resume", "download_url": "..."}
+data: {"document_id": "...", "doc_type": "resume", "filename": "...", "download_url": "..."}
 
 event: error        # Error message
 data: {"message": "..."}
@@ -231,5 +232,5 @@ backend/
 | Frontend | Vercel | Auto-deploy from GitHub |
 | Backend | Google Cloud Run | Containerized FastAPI |
 | Database | Supabase (us-east-1) | Project: hwzptzrjqcniukwrjnrb |
-| File Storage | Supabase Storage | Bucket: `documents`, signed URLs |
+| File Storage | Supabase Storage | Bucket: `documents`, private objects downloaded through backend auth |
 | GCP Project | resumeandcoverletterautomation | Project #226128760445 |

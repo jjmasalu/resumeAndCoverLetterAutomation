@@ -49,7 +49,7 @@ Returns aggregated user data for the profile page.
     { "id": "uuid", "filename": "string", "mime_type": "string", "file_size": 12345, "download_url": "signed_url", "created_at": "iso8601", "conversation_id": "uuid" }
   ],
   "generated_documents": [
-    { "id": "uuid", "doc_type": "resume", "file_url": "string", "download_url": "signed_url", "created_at": "iso8601", "job_id": "uuid" }
+    { "id": "uuid", "doc_type": "resume", "filename": "string", "file_url": "string", "download_url": "signed_url", "created_at": "iso8601", "job_id": "uuid" }
   ]
 }
 ```
@@ -58,7 +58,7 @@ Returns aggregated user data for the profile page.
 - `profiles` table for profile info
 - `user_context` table filtered by user_id
 - `conversation_files` table filtered by user_id
-- `generated_documents` table filtered by user_id, with signed download URLs
+- `generated_documents` table filtered by user_id, with stored filenames and signed storage URLs for fallback/direct access
 
 #### `PATCH /profile`
 
@@ -181,14 +181,14 @@ Single client component (`"use client"`) with sections:
 #### Uploaded Files Section
 - List from `GET /profile` response's `uploaded_files` array
 - Each file: icon, filename, size, date, conversation link
-- Download button → uses `download_url` from profile response (pre-signed, same pattern as generated documents)
+- Download button → calls the authenticated `/documents/{id}/download` endpoint and uses stored `filename`
 - Delete button → confirmation → `DELETE /conversation-files/{id}`
 - Empty state: "No uploaded files."
 
 #### Generated Documents Section
 - List from `GET /profile` response's `generated_documents` array
 - Each doc: icon (green), type + job title, date
-- Download button → uses `download_url` from profile response (pre-signed)
+- Download button → calls the authenticated `/documents/{id}/download` endpoint and uses stored `filename`
 - Delete button → confirmation → `DELETE /generated-documents/{id}`
 - Empty state: "No generated documents yet."
 
@@ -243,7 +243,7 @@ All new UI follows the existing design system:
 
 ### Profile Page Load
 1. Component mounts → shows loading spinner → `GET /profile` with auth token
-2. Backend queries 4 tables, generates signed URLs for files and documents
+2. Backend queries 4 tables, generates signed URLs for files and stores semantic filenames for generated documents
 3. Frontend renders sections from response
 
 ### Delete AI Context Entry

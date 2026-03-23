@@ -80,3 +80,32 @@ def test_upsert_activity_trace_replaces_existing_step_without_padding():
             "detail": "Captured the job description.",
         }
     ]
+
+
+def test_document_progress_status_payload_formats_resume_subphases():
+    payload = chat._document_progress_status_payload(
+        {"doc_type": "resume"},
+        {
+            "phase": "repair",
+            "state": "done",
+            "detail": "Reduced bullet count to fit one page.",
+            "meta": {
+                "attempt_count": 2,
+                "repair_actions": ["reduce_bullets"],
+            },
+        },
+    )
+
+    assert payload == {
+        "id": "generate_document:resume:repair",
+        "phase": "generate_resume_repair",
+        "label": "Adjusting resume",
+        "state": "done",
+        "tool": "generate_document",
+        "detail": "Reduced bullet count to fit one page.",
+        "meta": {
+            "doc_type": "resume",
+            "attempt_count": 2,
+            "repair_actions": ["reduce_bullets"],
+        },
+    }

@@ -232,14 +232,14 @@ See [DEPLOY_TEAM_TEST.md](/Users/aham/projects/dev/resumeAndCoverLetterAutomatio
 | GET | `/conversations` | Yes | List your conversations |
 | GET | `/conversations/{id}` | Yes | Get conversation with messages |
 | POST | `/conversations/{id}/messages` | Yes | Send message, get SSE stream |
-| GET | `/documents/{id}/download` | Yes | Get signed download URL |
+| GET | `/documents/{id}/download` | Yes | Download the `.docx` file directly |
 
 **Auth:** Pass `Authorization: Bearer <supabase-jwt>` header.
 
 **SSE Events** from `/conversations/{id}/messages`:
 - `event: message` — AI text chunk `{"content": "..."}`
 - `event: status` — Tool status `{"tool": "search_jobs", "state": "running"|"done"}`
-- `event: document` — Doc ready `{"document_id": "...", "doc_type": "...", "download_url": "..."}`
+- `event: document` — Doc ready `{"document_id": "...", "doc_type": "...", "filename": "...", "download_url": "..."}`
 - `event: error` — Error `{"message": "..."}`
 
 ---

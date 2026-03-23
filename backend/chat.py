@@ -204,6 +204,14 @@ TOOL_PHASE_LABELS = {
     "present_job_results": ("prepare_job_matches", "Preparing job matches"),
 }
 
+DOCUMENT_PROGRESS_PHASE_LABELS = {
+    "plan": "Planning",
+    "repair": "Adjusting",
+    "verify": "Verifying",
+    "render": "Rendering",
+    "save": "Saving",
+}
+
 
 def _build_context_prompt(user_id: str) -> str:
     """Load user context from Supabase and format as a prompt section."""
@@ -507,6 +515,35 @@ def _generate_document_status_metadata(args: dict, result: dict | None, state: s
     }
 
 
+def _document_progress_status_payload(args: dict, progress_event: dict) -> dict:
+    doc_type = str(args.get("doc_type", "document"))
+    phase = str(progress_event.get("phase", "progress"))
+    state = str(progress_event.get("state", "running"))
+    doc_label = {
+        "resume": "resume",
+        "cover_letter": "cover letter",
+    }.get(doc_type, "document")
+    phase_label = DOCUMENT_PROGRESS_PHASE_LABELS.get(
+        phase,
+        phase.replace("_", " ").title(),
+    )
+    detail = progress_event.get("detail")
+    meta = {"doc_type": doc_type}
+    raw_meta = progress_event.get("meta")
+    if isinstance(raw_meta, dict):
+        meta.update(raw_meta)
+
+    return _status_payload(
+        step_id=f"generate_document:{doc_type}:{phase}",
+        phase=f"generate_{doc_type}_{phase}",
+        label=f"{phase_label} {doc_label}",
+        state=state,
+        tool="generate_document",
+        detail=detail,
+        meta=meta,
+    )
+
+
 def _tool_status_payload(
     *,
     name: str,
@@ -568,6 +605,7 @@ async def _execute_tool(
     user_id: str,
     conversation_id: str,
     job_id: str | None,
+    progress_callback=None,
 ) -> tuple[dict, str | None]:
     """Execute a Gemini function call and return result + optional updated job_id."""
     name = function_call.name
@@ -604,6 +642,7 @@ async def _execute_tool(
                 sections=args.get("sections", {}),
                 user_id=user_id,
                 job_id=job_id,
+                progress_callback=progress_callback,
             )
             if "error" in result:
                 logger.error("tool_result generate_document error=%s", result["error"])
@@ -773,7 +812,53 @@ If tools_allowed is false, do not call any tools on this turn. Answer directly o
                     yield ServerSentEvent(data=json.dumps(running_status), event="status")
                     await asyncio.sleep(0)
 
-                    result, job_id = await _execute_tool(fc, user_id, conversation_id, job_id)
+                    if fc.name == "generate_document":
+                        progress_queue: asyncio.Queue[dict] = asyncio.Queue()
+                        loop = asyncio.get_running_loop()
+
+                        def progress_callback(event: dict) -> None:
+                            loop.call_soon_threadsafe(progress_queue.put_nowait, event)
+
+                        tool_task = asyncio.create_task(
+                            _execute_tool(
+                                fc,
+                                user_id,
+                                conversation_id,
+                                job_id,
+                                progress_callback=progress_callback,
+                            )
+                        )
+
+                        while True:
+                            if tool_task.done() and progress_queue.empty():
+                                break
+                            try:
+                                progress_event = await asyncio.wait_for(
+                                    progress_queue.get(),
+                                    timeout=0.1,
+                                )
+                            except asyncio.TimeoutError:
+                                continue
+
+                            progress_status = _document_progress_status_payload(
+                                dict(fc.args) if fc.args else {},
+                                progress_event,
+                            )
+                            _upsert_activity_trace(activity_trace, progress_status)
+                            yield ServerSentEvent(
+                                data=json.dumps(progress_status),
+                                event="status",
+                            )
+                            await asyncio.sleep(0)
+
+                        result, job_id = await tool_task
+                    else:
+                        result, job_id = await _execute_tool(
+                            fc,
+                            user_id,
+                            conversation_id,
+                            job_id,
+                        )
                     tool_state = "failed" if isinstance(result, dict) and "error" in result else "done"
 
                     completed_status = _tool_status_payload(

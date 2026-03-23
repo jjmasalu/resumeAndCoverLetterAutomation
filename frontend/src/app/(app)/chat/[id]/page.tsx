@@ -26,6 +26,7 @@ interface Message {
 interface DocumentEvent {
   document_id: string;
   doc_type: string;
+  filename?: string;
   download_url: string;
   theme_id?: string;
   page_budget?: number;
@@ -406,7 +407,12 @@ export default function ChatPage() {
             />
           ))}
           {documents.map((d) => (
-            <DownloadCard key={d.document_id} docType={d.doc_type} downloadUrl={d.download_url} />
+            <DownloadCard
+              key={d.document_id}
+              docType={d.doc_type}
+              documentId={d.document_id}
+              filename={d.filename || `${d.doc_type === "cover_letter" ? "cover-letter" : "resume"}.docx`}
+            />
           ))}
           <div ref={bottomRef} />
         </div>

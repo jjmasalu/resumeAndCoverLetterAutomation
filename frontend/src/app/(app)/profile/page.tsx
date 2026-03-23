@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { apiJson, apiFetch } from "@/lib/api";
+import { apiJson, apiFetch, downloadGeneratedDocument } from "@/lib/api";
 import { useApp } from "@/components/AppContext";
 import ConfirmDialog from "@/components/ConfirmDialog";
 
@@ -26,6 +26,7 @@ interface ProfileData {
   generated_documents: Array<{
     id: string;
     doc_type: string;
+    filename?: string;
     file_url: string;
     download_url: string;
     created_at: string;
@@ -246,6 +247,14 @@ export default function ProfilePage() {
         }
       },
     });
+  };
+
+  const handleDownloadDocument = async (id: string, filename: string) => {
+    try {
+      await downloadGeneratedDocument(id, filename);
+    } catch {
+      setError("Failed to download document");
+    }
   };
 
   const handleDeleteAllData = () => {
@@ -597,12 +606,14 @@ export default function ProfilePage() {
                     </svg>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-text-primary">
-                      {doc.doc_type === "cover_letter"
-                        ? "Cover Letter"
-                        : "Resume"}
+                    <p className="truncate text-sm text-text-primary">
+                      {doc.filename ||
+                        (doc.doc_type === "cover_letter"
+                          ? "Cover Letter"
+                          : "Resume")}
                     </p>
                     <p className="text-[11px] text-text-tertiary">
+                      {doc.doc_type === "cover_letter" ? "Cover Letter" : "Resume"} ·{" "}
                       {new Date(doc.created_at).toLocaleDateString(undefined, {
                         month: "short",
                         day: "numeric",
@@ -611,10 +622,15 @@ export default function ProfilePage() {
                     </p>
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
-                    <a
-                      href={doc.download_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleDownloadDocument(
+                          doc.id,
+                          doc.filename ||
+                            `${doc.doc_type === "cover_letter" ? "cover-letter" : "resume"}.docx`
+                        )
+                      }
                       className="p-1.5 rounded hover:bg-bg-tertiary transition text-text-tertiary hover:text-accent"
                       title="Download"
                     >
@@ -630,7 +646,7 @@ export default function ProfilePage() {
                         <polyline points="7 10 12 15 17 10" />
                         <line x1="12" y1="15" x2="12" y2="3" />
                       </svg>
-                    </a>
+                    </button>
                     <button
                       onClick={() => handleDeleteDocument(doc.id)}
                       className="p-1.5 rounded hover:bg-danger/10 transition text-text-tertiary hover:text-danger"

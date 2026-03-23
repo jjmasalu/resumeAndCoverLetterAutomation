@@ -3,6 +3,7 @@ import logging
 import uuid
 import json
 from datetime import datetime, timezone
+from typing import Callable
 from tavily import TavilyClient
 from firecrawl import Firecrawl
 from config import settings
@@ -13,11 +14,18 @@ from document_engine import (
     render_document,
     serialize_document_plan,
 )
+from document_filenames import (
+    default_generated_document_filename,
+    next_versioned_filename,
+    semantic_generated_document_filename,
+)
 
 logger = logging.getLogger(__name__)
 
 tavily_client = TavilyClient(api_key=settings.tavily_api_key)
 firecrawl_client = Firecrawl(api_key=settings.firecrawl_api_key)
+
+DocumentProgressCallback = Callable[[dict], None]
 
 def _canonicalize_for_merge(value):
     if isinstance(value, dict):
@@ -114,21 +122,167 @@ async def scrape_job(url: str) -> dict:
     return await asyncio.to_thread(_scrape_job_sync, url)
 
 
+def _emit_document_progress(
+    progress_callback: DocumentProgressCallback | None,
+    *,
+    phase: str,
+    state: str,
+    detail: str | None = None,
+    meta: dict | None = None,
+) -> None:
+    if not progress_callback:
+        return
+    payload = {
+        "phase": phase,
+        "state": state,
+    }
+    if detail:
+        payload["detail"] = detail
+    if meta:
+        payload["meta"] = meta
+    try:
+        progress_callback(payload)
+    except Exception as error:
+        logger.warning("document progress callback failed for %s/%s: %s", phase, state, error)
+
+
+def _summarize_repair_actions(repair_history: list[dict]) -> str:
+    labels = {
+        "switch_theme": "switched to a denser theme",
+        "tighten_text_budgets": "tightened summary and skills budgets",
+        "reduce_bullets": "reduced experience bullets",
+        "drop_low_priority_experience": "trimmed lower-priority experience",
+        "tighten_cover_letter_budgets": "tightened paragraph budgets",
+        "reduce_cover_letter_paragraphs": "reduced paragraph count",
+        "tighten_cover_letter_text": "tightened cover letter text",
+    }
+    actions = [
+        labels.get(str(item.get("action")), str(item.get("action", "")).replace("_", " "))
+        for item in repair_history
+        if item.get("action")
+    ]
+    if not actions:
+        return ""
+    if len(actions) == 1:
+        return actions[0].capitalize() + "."
+    if len(actions) == 2:
+        return f"{actions[0].capitalize()} and {actions[1]}."
+    return f"{actions[0].capitalize()}, {actions[1]}, and more."
+
+
+def _resolve_generated_document_filename(
+    *,
+    doc_type: str,
+    sections: dict,
+    user_id: str,
+) -> str:
+    base_filename = semantic_generated_document_filename(doc_type, sections)
+    try:
+        existing = (
+            supabase.table("generated_documents")
+            .select("filename")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        existing_filenames = [
+            row.get("filename")
+            for row in (existing.data or [])
+            if row.get("filename")
+        ]
+    except Exception as error:
+        logger.warning("failed to load existing generated filenames: %s", error)
+        existing_filenames = []
+
+    return next_versioned_filename(base_filename, existing_filenames)
+
+
 def _generate_document_sync(
     doc_type: str,
     sections: dict,
     user_id: str,
     job_id: str,
+    progress_callback: DocumentProgressCallback | None = None,
 ) -> dict:
     """Generate a .docx document from template and upload to Supabase Storage."""
     logger.info("generate_document type=%s job_id=%s", doc_type, job_id[:8])
+    active_phase = "plan"
+    generated_at = datetime.now(timezone.utc)
+    filename = _resolve_generated_document_filename(
+        doc_type=doc_type,
+        sections=sections,
+        user_id=user_id,
+    )
     try:
+        _emit_document_progress(
+            progress_callback,
+            phase="plan",
+            state="running",
+        )
         plan = build_document_plan(doc_type, sections)
+        _emit_document_progress(
+            progress_callback,
+            phase="plan",
+            state="done",
+            detail=f"Selected {plan.theme_id.replace('_', ' ')} theme.",
+            meta={
+                "theme_id": plan.theme_id,
+                "density": plan.density,
+                "attempt_count": plan.attempt_count,
+            },
+        )
+        if plan.repair_history:
+            _emit_document_progress(
+                progress_callback,
+                phase="repair",
+                state="done",
+                detail=_summarize_repair_actions(plan.repair_history),
+                meta={
+                    "repair_actions": [item.get("action") for item in plan.repair_history],
+                    "attempt_count": plan.attempt_count,
+                },
+            )
+        verification = plan.verification or {}
+        verification_status = verification.get("status", "passed")
+        verification_issues = verification.get("issues") or []
+        verification_detail = (
+            f"Fits the {plan.page_budget}-page budget."
+            if verification_status == "passed"
+            else (verification_issues[0].get("message") if verification_issues else "Layout verification failed.")
+        )
+        _emit_document_progress(
+            progress_callback,
+            phase="verify",
+            state="done" if verification_status == "passed" else "failed",
+            detail=verification_detail,
+            meta={
+                "verification_status": verification_status,
+                "page_budget": plan.page_budget,
+            },
+        )
+
+        _emit_document_progress(
+            progress_callback,
+            phase="render",
+            state="running",
+        )
+        active_phase = "render"
         document_bytes = render_document(plan)
+        _emit_document_progress(
+            progress_callback,
+            phase="render",
+            state="done",
+            detail="Built the DOCX document.",
+        )
 
         doc_id = str(uuid.uuid4())
         storage_path = f"{user_id}/{doc_id}.docx"
 
+        _emit_document_progress(
+            progress_callback,
+            phase="save",
+            state="running",
+        )
+        active_phase = "save"
         supabase.storage.from_("documents").upload(
             path=storage_path,
             file=document_bytes,
@@ -145,13 +299,21 @@ def _generate_document_sync(
             "job_id": job_id,
             "user_id": user_id,
             "doc_type": doc_type,
+            "filename": filename,
             "file_url": storage_path,
         }).execute()
+        _emit_document_progress(
+            progress_callback,
+            phase="save",
+            state="done",
+            detail="Stored the document and generated a download link.",
+        )
 
         logger.info("generate_document success doc_id=%s", doc_id[:8])
         return {
             "document_id": doc_id,
             "doc_type": doc_type,
+            "filename": filename or default_generated_document_filename(doc_type, generated_at),
             "download_url": signed_url.get("signedURL", ""),
             "theme_id": plan.theme_id,
             "page_budget": plan.page_budget,
@@ -159,6 +321,12 @@ def _generate_document_sync(
         }
     except Exception as e:
         logger.error("generate_document failed: %s", e)
+        _emit_document_progress(
+            progress_callback,
+            phase=active_phase,
+            state="failed",
+            detail=f"{str(e)}",
+        )
         return {"error": f"Document generation failed: {str(e)}"}
 
 
@@ -167,6 +335,7 @@ async def generate_document(
     sections: dict,
     user_id: str,
     job_id: str,
+    progress_callback: DocumentProgressCallback | None = None,
 ) -> dict:
     return await asyncio.to_thread(
         _generate_document_sync,
@@ -174,6 +343,7 @@ async def generate_document(
         sections,
         user_id,
         job_id,
+        progress_callback,
     )
 
 

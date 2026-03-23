@@ -128,3 +128,21 @@ export async function apiUpload<T>(path: string, file: File): Promise<T> {
   }
   return res.json();
 }
+
+export async function downloadGeneratedDocument(
+  documentId: string,
+  filename: string
+) {
+  const response = await apiFetch(`/documents/${documentId}/download`, {
+    headers: {},
+  });
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(objectUrl);
+}

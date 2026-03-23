@@ -2,10 +2,11 @@ import logging
 import tempfile
 import os
 from datetime import datetime, timezone
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
 from config import settings
+from document_filenames import default_generated_document_filename
 from auth import (
     TEAM_ACCESS_BLOCKED_DETAIL,
     TEAM_ACCESS_UNCONFIGURED_DETAIL,
@@ -38,6 +39,7 @@ logging.basicConfig(
 
 logger = logging.getLogger("api")
 app = FastAPI(title="Resume & Cover Letter AI", version="0.1.0")
+DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 # CORS
 app.add_middleware(
@@ -60,6 +62,18 @@ ALLOWED_MIME_TYPES = {
     "image/jpeg",
 }
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+
+
+def _stored_or_default_document_filename(filename: str | None, doc_type: str, created_at: str | None = None) -> str:
+    if filename:
+        return filename
+    parsed_created_at = None
+    if created_at:
+        try:
+            parsed_created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        except ValueError:
+            parsed_created_at = None
+    return default_generated_document_filename(doc_type, parsed_created_at)
 
 
 @app.get("/health")
@@ -160,7 +174,7 @@ async def get_profile(user_id: str = Depends(get_current_user)):
     # Generated documents
     docs = (
         supabase.table("generated_documents")
-        .select("id, job_id, doc_type, file_url, created_at")
+        .select("id, job_id, doc_type, filename, file_url, created_at")
         .eq("user_id", user_id)
         .order("created_at", desc=True)
         .execute()
@@ -174,6 +188,11 @@ async def get_profile(user_id: str = Depends(get_current_user)):
             d["download_url"] = signed.get("signedURL", "")
         except Exception:
             d["download_url"] = ""
+        d["filename"] = _stored_or_default_document_filename(
+            d.get("filename"),
+            d["doc_type"],
+            d.get("created_at"),
+        )
         docs_with_urls.append(d)
 
     return {
@@ -328,7 +347,7 @@ async def get_conversation(
         for job_id in job_ids:
             doc_results = (
                 supabase.table("generated_documents")
-                .select("id, doc_type, file_url")
+                .select("id, doc_type, filename, file_url, created_at")
                 .eq("job_id", job_id)
                 .execute()
             )
@@ -339,6 +358,11 @@ async def get_conversation(
                 docs.append({
                     "document_id": doc["id"],
                     "doc_type": doc["doc_type"],
+                    "filename": _stored_or_default_document_filename(
+                        doc.get("filename"),
+                        doc["doc_type"],
+                        doc.get("created_at"),
+                    ),
                     "download_url": signed.get("signedURL", ""),
                 })
 
@@ -562,7 +586,7 @@ async def download_document(
 ):
     doc = (
         supabase.table("generated_documents")
-        .select("*")
+        .select("id, doc_type, filename, file_url, created_at")
         .eq("id", document_id)
         .eq("user_id", user_id)
         .maybe_single()
@@ -571,10 +595,26 @@ async def download_document(
     if not doc.data:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    signed = supabase.storage.from_("documents").create_signed_url(
-        doc.data["file_url"], 3600
+    try:
+        payload = supabase.storage.from_("documents").download(doc.data["file_url"])
+    except Exception as error:
+        logger.error("Failed to download document %s: %s", document_id[:8], error)
+        raise HTTPException(status_code=500, detail="Failed to download document")
+
+    file_bytes = payload.read() if hasattr(payload, "read") else payload
+    filename = _stored_or_default_document_filename(
+        doc.data.get("filename"),
+        doc.data["doc_type"],
+        doc.data.get("created_at"),
     )
-    return {"download_url": signed.get("signedURL", "")}
+    return Response(
+        content=file_bytes,
+        media_type=DOCX_MIME_TYPE,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 # ── Individual File & Document Deletes ───────────────────────────────
