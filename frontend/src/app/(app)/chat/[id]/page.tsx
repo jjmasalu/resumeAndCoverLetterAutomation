@@ -107,6 +107,7 @@ export default function ChatPage() {
   const initialSent = useRef(false);
   const streamingRef = useRef(false);
   const activityStepsRef = useRef<ActivityStep[]>([]);
+  const skipNextHistoryLoadRef = useRef(false);
 
   useEffect(() => {
     activityStepsRef.current = activitySteps;
@@ -121,6 +122,11 @@ export default function ChatPage() {
 
   // Load existing messages and documents (skip if auto-sending initial message)
   useEffect(() => {
+    if (skipNextHistoryLoadRef.current) {
+      skipNextHistoryLoadRef.current = false;
+      setLoadingMessages(false);
+      return;
+    }
     if (hasInitialMessage) {
       // Brand-new conversation via redirect — no messages to fetch
       setLoadingMessages(false);
@@ -304,6 +310,7 @@ export default function ChatPage() {
   useEffect(() => {
     if (initialMessage && !initialSent.current && !loadingMessages) {
       initialSent.current = true;
+      skipNextHistoryLoadRef.current = true;
       window.history.replaceState({}, "", `/chat/${id}`);
       doSend(initialMessage);
     }
