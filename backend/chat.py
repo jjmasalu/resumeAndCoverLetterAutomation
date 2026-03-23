@@ -1,3 +1,4 @@
+import asyncio
 import json
 import io
 import logging
@@ -17,6 +18,7 @@ gemini_client = genai.Client(api_key=settings.gemini_api_key)
 
 MODEL = "gemini-2.5-flash"
 DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+STREAM_FLUSH_PADDING = " " * 8192
 
 # Gemini function declarations
 SEARCH_JOBS_DECLARATION = types.FunctionDeclaration(
@@ -425,6 +427,10 @@ def _status_payload(
         "label": label,
         "state": state,
     }
+    # Cloud Run can coalesce very small SSE frames. Padding live status events
+    # makes the first in-progress update visible before the tool finishes.
+    if state == "running":
+        payload["_stream_padding"] = STREAM_FLUSH_PADDING
     if tool:
         payload["tool"] = tool
     if detail:
@@ -634,7 +640,9 @@ async def stream_chat(
         ),
         event="status",
     )
-    router = _analyze_turn(
+    await asyncio.sleep(0)
+    router = await asyncio.to_thread(
+        _analyze_turn,
         user_message=user_message,
         mode=mode,
         context_prompt=context_prompt,
@@ -645,6 +653,7 @@ async def stream_chat(
         data=json.dumps(_router_status_payload(router, "done")),
         event="status",
     )
+    await asyncio.sleep(0)
 
     supabase.table("messages").insert({
         "conversation_id": conversation_id,
@@ -753,6 +762,7 @@ If tools_allowed is false, do not call any tools on this turn. Answer directly o
                         ),
                         event="status",
                     )
+                    await asyncio.sleep(0)
 
                     result, job_id = await _execute_tool(fc, user_id, conversation_id, job_id)
                     tool_state = "failed" if isinstance(result, dict) and "error" in result else "done"
@@ -768,12 +778,14 @@ If tools_allowed is false, do not call any tools on this turn. Answer directly o
                         ),
                         event="status",
                     )
+                    await asyncio.sleep(0)
 
                     if fc.name == "generate_document" and "document_id" in result:
                         yield ServerSentEvent(
                             data=json.dumps(result),
                             event="document",
                         )
+                        await asyncio.sleep(0)
 
                     # Emit job_result events for present_job_results
                     if fc.name == "present_job_results":
@@ -800,6 +812,7 @@ If tools_allowed is false, do not call any tools on this turn. Answer directly o
                         data=json.dumps({"content": part.text}),
                         event="message",
                     )
+                    await asyncio.sleep(0)
 
             if has_function_call:
                 break

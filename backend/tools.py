@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import uuid
 import json
@@ -62,7 +63,7 @@ def _merge_context_content(existing, incoming):
     return incoming
 
 
-async def search_jobs(query: str, location: str | None = None) -> list[dict]:
+def _search_jobs_sync(query: str, location: str | None = None) -> list[dict]:
     """Search for job postings using Tavily."""
     search_query = f"{query} job posting"
     if location:
@@ -89,7 +90,11 @@ async def search_jobs(query: str, location: str | None = None) -> list[dict]:
         return [{"error": f"Search failed: {str(e)}"}]
 
 
-async def scrape_job(url: str) -> dict:
+async def search_jobs(query: str, location: str | None = None) -> list[dict]:
+    return await asyncio.to_thread(_search_jobs_sync, query, location)
+
+
+def _scrape_job_sync(url: str) -> dict:
     """Scrape a job posting URL using Firecrawl."""
     logger.info("scrape_job url=%s", url)
     try:
@@ -105,7 +110,11 @@ async def scrape_job(url: str) -> dict:
         return {"error": f"Scraping failed: {str(e)}"}
 
 
-async def generate_document(
+async def scrape_job(url: str) -> dict:
+    return await asyncio.to_thread(_scrape_job_sync, url)
+
+
+def _generate_document_sync(
     doc_type: str,
     sections: dict,
     user_id: str,
@@ -153,7 +162,22 @@ async def generate_document(
         return {"error": f"Document generation failed: {str(e)}"}
 
 
-async def save_user_context(
+async def generate_document(
+    doc_type: str,
+    sections: dict,
+    user_id: str,
+    job_id: str,
+) -> dict:
+    return await asyncio.to_thread(
+        _generate_document_sync,
+        doc_type,
+        sections,
+        user_id,
+        job_id,
+    )
+
+
+def _save_user_context_sync(
     user_id: str,
     category: str,
     content: dict,
@@ -193,3 +217,18 @@ async def save_user_context(
     except Exception as e:
         logger.error("save_user_context failed: %s", e)
         return {"error": f"Context save failed: {str(e)}"}
+
+
+async def save_user_context(
+    user_id: str,
+    category: str,
+    content: dict,
+    conversation_id: str | None = None,
+) -> dict:
+    return await asyncio.to_thread(
+        _save_user_context_sync,
+        user_id,
+        category,
+        content,
+        conversation_id,
+    )

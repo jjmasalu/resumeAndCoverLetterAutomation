@@ -459,7 +459,13 @@ async def send_message(
         ):
             yield event
 
-    return EventSourceResponse(event_generator())
+    return EventSourceResponse(
+        event_generator(),
+        ping=1,
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+        },
+    )
 
 
 @app.post("/conversations/{conversation_id}/upload", response_model=UploadFileResponse)
