@@ -138,8 +138,7 @@ export default function ChatPage() {
     return () => setActiveConversation(null);
   }, [id, conversations, setActiveConversation]);
 
-  const conversationReadyForSend =
-    activeConversation?.id === id || conversations.some((conversation) => conversation.id === id);
+  const conversationReadyForSend = activeConversation?.id === id;
 
   // Load existing messages and documents (skip if auto-sending initial message)
   useEffect(() => {
@@ -372,9 +371,13 @@ export default function ChatPage() {
     ) {
       initialSent.current = true;
       skipNextHistoryLoadRef.current = true;
+      const messageToSend = pendingInitialMessage;
       clearPendingChatMessage(id);
       setPendingInitialMessage(null);
-      doSend(pendingInitialMessage);
+      const timeoutId = window.setTimeout(() => {
+        void doSend(messageToSend);
+      }, 50);
+      return () => window.clearTimeout(timeoutId);
     }
   }, [pendingInitialMessage, conversationReadyForSend, loadingMessages, id, doSend]);
 
