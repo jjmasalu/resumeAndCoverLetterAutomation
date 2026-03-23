@@ -228,6 +228,7 @@ export default function ChatPage() {
       let buffer = "";
 
       const consumeSseBuffer = (flushTrailing = false) => {
+        buffer = buffer.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
         const rawEvents = buffer.split("\n\n");
         buffer = flushTrailing ? "" : rawEvents.pop() || "";
 
