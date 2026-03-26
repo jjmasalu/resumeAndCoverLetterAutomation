@@ -2,8 +2,10 @@ import asyncio
 import logging
 import uuid
 import json
+import re
 from datetime import datetime, timezone
 from typing import Any, Callable
+from urllib.parse import parse_qs, urlparse, urlunparse
 from tavily import TavilyClient
 from firecrawl import Firecrawl
 from config import settings
@@ -25,11 +27,366 @@ logger = logging.getLogger(__name__)
 tavily_client = TavilyClient(api_key=settings.tavily_api_key)
 firecrawl_client = Firecrawl(api_key=settings.firecrawl_api_key)
 
+AGGREGATOR_DOMAINS = {
+    "indeed.com",
+    "linkedin.com",
+    "glassdoor.com",
+    "ziprecruiter.com",
+    "monster.com",
+    "simplyhired.com",
+    "wellfound.com",
+    "builtin.com",
+    "builtinnyc.com",
+    "builtinseattle.com",
+    "remote.co",
+    "weworkremotely.com",
+    "4dayweek.io",
+    "crossover.com",
+}
+ATS_SEARCH_DOMAINS = (
+    "jobs.lever.co",
+    "boards.greenhouse.io",
+    "job-boards.greenhouse.io",
+    "jobs.ashbyhq.com",
+    "myworkdayjobs.com",
+    "myworkdaysite.com",
+    "jobs.smartrecruiters.com",
+)
+KNOWN_HTTPS_ONLY_DOMAINS = {
+    "jobs.lever.co",
+    "boards.greenhouse.io",
+    "job-boards.greenhouse.io",
+    "jobs.ashbyhq.com",
+    "jobs.smartrecruiters.com",
+}
+LISTING_TITLE_PATTERNS = (
+    "jobs in",
+    "all jobs",
+    "job openings",
+    "remote jobs",
+    "work from home",
+    "now hiring",
+    "careers at",
+    "search results",
+)
+LISTING_MARKDOWN_PATTERNS = (
+    "keyword : all jobs",
+    "date posted",
+    "job type",
+    "experience level",
+    "distance",
+    "encouraged to apply",
+)
+MISSING_PAGE_PATTERNS = (
+    "sorry, but we can't find that page",
+    "job is no longer available",
+    "job no longer exists",
+    "no longer accepting applications",
+    "this job has expired",
+)
+AUTH_WALL_PATTERNS = (
+    "sign in",
+    "log in",
+    "create account",
+    "access denied",
+    "forbidden",
+    "captcha",
+    "managed challenge",
+)
+WORKDAY_UNAVAILABLE_PATTERNS = (
+    "workday is currently unavailable",
+    "service interruption",
+    "your service will be restored as quickly as possible",
+)
+MIN_ACCEPTABLE_JOB_MARKDOWN = 400
+
 DocumentProgressCallback = Callable[[dict], None]
 VARIANT_LABELS = {
     "ats_safe": "ATS-safe",
     "creative_safe": "Creative-safe",
 }
+
+
+def _host_matches(host: str, domain: str) -> bool:
+    return host == domain or host.endswith(f".{domain}")
+
+
+def _normalize_job_url(url: str) -> str:
+    parsed = urlparse((url or "").strip())
+    host = parsed.netloc.lower()
+    if not host:
+        return url
+
+    host_no_www = host[4:] if host.startswith("www.") else host
+    scheme = "https" if host_no_www in KNOWN_HTTPS_ONLY_DOMAINS else (parsed.scheme or "https")
+
+    query = parse_qs(parsed.query, keep_blank_values=False)
+    keep_query: dict[str, list[str]] = {}
+    if host_no_www == "boards.greenhouse.io" and parsed.path == "/embed/job_app":
+        token = query.get("token")
+        if token:
+            keep_query["token"] = token
+
+    normalized = parsed._replace(
+        scheme=scheme,
+        query="&".join(
+            f"{key}={value}"
+            for key, values in keep_query.items()
+            for value in values
+        ),
+        fragment="",
+    )
+    return urlunparse(normalized)
+
+
+def _inspect_job_url(url: str) -> dict[str, Any]:
+    normalized_url = _normalize_job_url(url)
+    parsed = urlparse(normalized_url)
+    host = parsed.netloc.lower()
+    host_no_www = host[4:] if host.startswith("www.") else host
+    path = parsed.path.rstrip("/")
+    title_hint = ""
+
+    inspection = {
+        "normalized_url": normalized_url,
+        "domain": host_no_www,
+        "platform": "unknown",
+        "url_kind": "unknown",
+        "canonical_candidate": False,
+    }
+
+    if not host_no_www:
+        return inspection
+
+    if any(_host_matches(host_no_www, domain) for domain in AGGREGATOR_DOMAINS):
+        inspection["platform"] = "aggregator"
+        if (
+            "/viewjob" in path
+            or "/jobs/view" in path
+            or "/job-listing/" in path
+        ):
+            inspection["url_kind"] = "aggregator_job"
+        else:
+            inspection["url_kind"] = "aggregator_listing"
+        return inspection
+
+    if host_no_www == "jobs.lever.co":
+        inspection["platform"] = "lever"
+        segments = [segment for segment in path.split("/") if segment]
+        inspection["url_kind"] = "direct_job" if len(segments) >= 2 else "listing_page"
+        inspection["canonical_candidate"] = inspection["url_kind"] == "direct_job"
+        return inspection
+
+    if host_no_www in {"boards.greenhouse.io", "job-boards.greenhouse.io"}:
+        inspection["platform"] = "greenhouse"
+        if parsed.path == "/embed/job_app" and parse_qs(parsed.query).get("token"):
+            inspection["url_kind"] = "direct_job"
+        elif re.match(r"^/[^/]+/jobs/\d+$", path):
+            inspection["url_kind"] = "direct_job"
+        else:
+            inspection["url_kind"] = "listing_page"
+        inspection["canonical_candidate"] = inspection["url_kind"] == "direct_job"
+        return inspection
+
+    if host_no_www == "jobs.ashbyhq.com":
+        inspection["platform"] = "ashby"
+        segments = [segment for segment in path.split("/") if segment]
+        inspection["url_kind"] = "direct_job" if len(segments) >= 2 else "listing_page"
+        inspection["canonical_candidate"] = inspection["url_kind"] == "direct_job"
+        return inspection
+
+    if "myworkdayjobs.com" in host_no_www or "myworkdaysite.com" in host_no_www:
+        inspection["platform"] = "workday"
+        if "/job/" in path:
+            inspection["url_kind"] = "direct_job"
+            inspection["canonical_candidate"] = True
+        else:
+            inspection["url_kind"] = "listing_page"
+        return inspection
+
+    if host_no_www == "jobs.smartrecruiters.com":
+        inspection["platform"] = "smartrecruiters"
+        segments = [segment for segment in path.split("/") if segment]
+        inspection["url_kind"] = "direct_job" if len(segments) >= 2 else "listing_page"
+        inspection["canonical_candidate"] = inspection["url_kind"] == "direct_job"
+        return inspection
+
+    if host_no_www.startswith("careers.") or ".careers." in host_no_www:
+        inspection["platform"] = "company_careers"
+        if any(marker in path.lower() for marker in ("/job/", "/positions/", "/careers/")):
+            inspection["url_kind"] = "direct_job"
+            inspection["canonical_candidate"] = True
+        else:
+            inspection["url_kind"] = "listing_page"
+        return inspection
+
+    if path.lower().endswith("/jobs") or path.lower().endswith("/careers"):
+        inspection["platform"] = "company_careers"
+        inspection["url_kind"] = "listing_page"
+        return inspection
+
+    if any(marker in path.lower() for marker in ("/job/", "/jobs/", "/positions/")):
+        inspection["platform"] = "company_careers"
+        inspection["url_kind"] = "direct_job"
+        inspection["canonical_candidate"] = True
+        return inspection
+
+    return inspection
+
+
+def _looks_like_listing_title(title: str) -> bool:
+    lower = (title or "").strip().lower()
+    return any(_contains_phrase(lower, pattern) for pattern in LISTING_TITLE_PATTERNS)
+
+
+def _contains_phrase(text: str, phrase: str) -> bool:
+    pattern = r"\b" + re.escape(phrase).replace(r"\ ", r"\s+") + r"\b"
+    return re.search(pattern, text) is not None
+
+
+def _search_result_score(item: dict[str, Any]) -> int:
+    score = 0
+    url_kind = item.get("url_kind")
+    platform = item.get("platform")
+    if url_kind == "direct_job":
+        score += 100
+    elif url_kind == "aggregator_job":
+        score += 15
+    elif url_kind in {"listing_page", "aggregator_listing"}:
+        score -= 120
+
+    if platform in {"lever", "greenhouse", "ashby", "smartrecruiters"}:
+        score += 25
+    elif platform == "workday":
+        score += 10
+    elif platform == "company_careers":
+        score += 20
+    elif platform == "aggregator":
+        score -= 30
+
+    if _looks_like_listing_title(item.get("title", "")):
+        score -= 45
+
+    if item.get("canonical_candidate"):
+        score += 25
+
+    return score
+
+
+def _normalize_search_result(raw: dict[str, Any], *, search_pass: str) -> dict[str, Any]:
+    inspection = _inspect_job_url(raw.get("url", ""))
+    item = {
+        "title": raw.get("title", "").strip(),
+        "url": inspection["normalized_url"],
+        "snippet": (raw.get("content") or raw.get("snippet") or "").strip()[:240],
+        "domain": inspection["domain"],
+        "platform": inspection["platform"],
+        "url_kind": inspection["url_kind"],
+        "canonical_candidate": inspection["canonical_candidate"],
+        "search_pass": search_pass,
+    }
+    item["score"] = _search_result_score(item)
+    return item
+
+
+def _metadata_to_dict(metadata: Any) -> dict[str, Any]:
+    if metadata is None:
+        return {}
+    if hasattr(metadata, "model_dump"):
+        return metadata.model_dump(exclude_none=True)
+    if isinstance(metadata, dict):
+        return {k: v for k, v in metadata.items() if v is not None}
+    return {
+        key: value
+        for key, value in vars(metadata).items()
+        if value is not None and not key.startswith("_")
+    }
+
+
+def _extract_heading_title(markdown: str) -> str | None:
+    for line in (markdown or "").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("# "):
+            return stripped[2:].strip()
+        if stripped.startswith("## "):
+            return stripped[3:].strip()
+    return None
+
+
+def _scrape_title(markdown: str, metadata: dict[str, Any]) -> str:
+    heading_title = _extract_heading_title(markdown)
+    if heading_title:
+        return heading_title
+    title = str(metadata.get("title") or metadata.get("og_title") or "").strip()
+    title = re.sub(r"^Job Application for\s+", "", title, flags=re.IGNORECASE)
+    if " at " in title:
+        title = title.split(" at ", 1)[0].strip()
+    if " - " in title and not title.lower().startswith("sr. "):
+        left, right = title.split(" - ", 1)
+        if len(right.split()) <= len(left.split()) + 2:
+            title = right.strip()
+    return title or "Job Posting"
+
+
+def _scrape_blockers(inspection: dict[str, Any], markdown: str, metadata: dict[str, Any]) -> list[str]:
+    blockers: list[str] = []
+    lower = (markdown or "").lower()
+    status_code = metadata.get("status_code")
+    error = metadata.get("error")
+
+    if inspection["url_kind"] in {"listing_page", "aggregator_listing"}:
+        blockers.append("non_specific_job_page")
+
+    if status_code and int(status_code) >= 400:
+        blockers.append(f"upstream_http_{status_code}")
+
+    if error:
+        blockers.append("provider_error")
+
+    if any(_contains_phrase(lower, pattern) for pattern in MISSING_PAGE_PATTERNS):
+        blockers.append("job_not_found")
+
+    if any(_contains_phrase(lower, pattern) for pattern in AUTH_WALL_PATTERNS):
+        blockers.append("access_wall")
+
+    if any(_contains_phrase(lower, pattern) for pattern in LISTING_MARKDOWN_PATTERNS):
+        blockers.append("listing_page_content")
+
+    if inspection["platform"] == "workday" and (
+        "errorcode" in lower or (status_code and int(status_code) >= 400)
+    ):
+        blockers.append("workday_access_issue")
+    if inspection["platform"] == "workday" and any(
+        _contains_phrase(lower, pattern) for pattern in WORKDAY_UNAVAILABLE_PATTERNS
+    ):
+        blockers.append("workday_unavailable")
+
+    if len((markdown or "").strip()) < MIN_ACCEPTABLE_JOB_MARKDOWN:
+        blockers.append("insufficient_content")
+
+    deduped: list[str] = []
+    for blocker in blockers:
+        if blocker not in deduped:
+            deduped.append(blocker)
+    return deduped
+
+
+def _scrape_error_response(
+    *,
+    message: str,
+    code: str,
+    inspection: dict[str, Any],
+    blockers: list[str] | None = None,
+) -> dict[str, Any]:
+    return {
+        "error": message,
+        "error_code": code,
+        "url": inspection["normalized_url"],
+        "platform": inspection["platform"],
+        "url_kind": inspection["url_kind"],
+        "canonical_candidate": inspection["canonical_candidate"],
+        "blockers": blockers or [],
+    }
 
 def _canonicalize_for_merge(value):
     if isinstance(value, dict):
@@ -76,27 +433,88 @@ def _merge_context_content(existing, incoming):
 
 
 def _search_jobs_sync(query: str, location: str | None = None) -> list[dict]:
-    """Search for job postings using Tavily."""
+    """Search for direct job postings using Tavily."""
     search_query = f"{query} job posting"
     if location:
         search_query += f" {location}"
     logger.info("search_jobs query=%s", search_query)
+
+    search_passes = [
+        (
+            "ats_canonical",
+            {
+                "query": search_query,
+                "max_results": 10,
+                "search_depth": "advanced",
+                "include_domains": ATS_SEARCH_DOMAINS,
+                "timeout": 20,
+            },
+        ),
+        (
+            "broad_filtered",
+            {
+                "query": search_query,
+                "max_results": 10,
+                "search_depth": "advanced",
+                "exclude_domains": sorted(AGGREGATOR_DOMAINS),
+                "timeout": 20,
+            },
+        ),
+        (
+            "broad_fallback",
+            {
+                "query": search_query,
+                "max_results": 5,
+                "search_depth": "basic",
+                "timeout": 20,
+            },
+        ),
+    ]
     try:
-        results = tavily_client.search(
-            query=search_query,
-            max_results=5,
-            search_depth="basic",
+        deduped: dict[str, dict[str, Any]] = {}
+        for search_pass, kwargs in search_passes:
+            results = tavily_client.search(**kwargs)
+            for raw in results.get("results", []):
+                normalized = _normalize_search_result(raw, search_pass=search_pass)
+                if not normalized["url"]:
+                    continue
+                existing = deduped.get(normalized["url"])
+                if existing is None or normalized["score"] > existing["score"]:
+                    deduped[normalized["url"]] = normalized
+
+            if any(item["canonical_candidate"] for item in deduped.values()):
+                break
+
+        ranked = sorted(
+            deduped.values(),
+            key=lambda item: (
+                item["score"],
+                item["canonical_candidate"],
+                len(item.get("snippet", "")),
+            ),
+            reverse=True,
         )
+        filtered = [item for item in ranked if item["score"] > -100] or ranked
         items = [
             {
-                "title": r.get("title", ""),
-                "url": r.get("url", ""),
-                "snippet": r.get("content", "")[:200],
+                "title": item["title"],
+                "url": item["url"],
+                "snippet": item["snippet"],
+                "domain": item["domain"],
+                "platform": item["platform"],
+                "url_kind": item["url_kind"],
+                "canonical_candidate": item["canonical_candidate"],
             }
-            for r in results.get("results", [])
+            for item in filtered[:6]
         ]
-        logger.info("search_jobs found %d results", len(items))
-        return items
+        logger.info(
+            "search_jobs found %d results canonical=%d",
+            len(items),
+            sum(1 for item in items if item.get("canonical_candidate")),
+        )
+        if items:
+            return items
+        return [{"error": "No job postings found. Try a more specific role or company."}]
     except Exception as e:
         logger.error("search_jobs failed: %s", e)
         return [{"error": f"Search failed: {str(e)}"}]
@@ -107,19 +525,108 @@ async def search_jobs(query: str, location: str | None = None) -> list[dict]:
 
 
 def _scrape_job_sync(url: str) -> dict:
-    """Scrape a job posting URL using Firecrawl."""
-    logger.info("scrape_job url=%s", url)
+    """Scrape a job posting URL using Firecrawl with quality checks."""
+    inspection = _inspect_job_url(url)
+    normalized_url = inspection["normalized_url"]
+    logger.info(
+        "scrape_job url=%s platform=%s kind=%s",
+        normalized_url,
+        inspection["platform"],
+        inspection["url_kind"],
+    )
+
+    if inspection["url_kind"] in {"listing_page", "aggregator_listing"}:
+        return _scrape_error_response(
+            message="This URL looks like a job board or search results page, not a specific job posting.",
+            code="non_specific_job_url",
+            inspection=inspection,
+            blockers=["non_specific_job_page"],
+        )
+
     try:
-        result = firecrawl_client.scrape(url, formats=["markdown"])
+        result = firecrawl_client.scrape(
+            normalized_url,
+            formats=["markdown", "html", "links"],
+            only_main_content=True,
+            timeout=30000,
+            wait_for=1500,
+            block_ads=True,
+        )
         markdown = result.markdown or ""
-        logger.info("scrape_job success md_len=%d", len(markdown))
+        metadata = _metadata_to_dict(getattr(result, "metadata", None))
+        blockers = _scrape_blockers(inspection, markdown, metadata)
+        title = _scrape_title(markdown, metadata)
+
+        failure_blockers = [
+            blocker
+            for blocker in blockers
+            if blocker
+            in {
+                "non_specific_job_page",
+                "upstream_http_400",
+                "upstream_http_401",
+                "upstream_http_403",
+                "upstream_http_404",
+                "upstream_http_429",
+                "upstream_http_500",
+                "provider_error",
+                "job_not_found",
+                "access_wall",
+                "workday_access_issue",
+                "workday_unavailable",
+                "insufficient_content",
+            }
+        ]
+        if failure_blockers:
+            primary = failure_blockers[0]
+            message_map = {
+                "job_not_found": "That job posting appears to be unavailable or expired.",
+                "access_wall": "That page appears to require sign-in or anti-bot clearance before it can be read.",
+                "workday_access_issue": "That Workday URL could not be read as a direct job posting. Workday board URLs often need a specific job page.",
+                "workday_unavailable": "That Workday job page is currently returning a Workday outage or maintenance screen instead of the job description.",
+                "insufficient_content": "I could reach the page, but it did not expose enough job-description content to use reliably.",
+                "non_specific_job_page": "This URL does not point to a specific job posting.",
+            }
+            default_message = f"Job scraping failed because of {primary.replace('_', ' ')}."
+            return _scrape_error_response(
+                message=message_map.get(primary, default_message),
+                code=primary,
+                inspection=inspection,
+                blockers=blockers,
+            )
+
+        quality = "high" if inspection["canonical_candidate"] else "medium"
+        logger.info(
+            "scrape_job success md_len=%d quality=%s blockers=%s",
+            len(markdown),
+            quality,
+            ",".join(blockers) if blockers else "none",
+        )
         return {
             "description_md": markdown,
-            "url": url,
+            "url": normalized_url,
+            "canonical_url": metadata.get("og_url") or metadata.get("url") or normalized_url,
+            "title": title,
+            "platform": inspection["platform"],
+            "url_kind": inspection["url_kind"],
+            "canonical_candidate": inspection["canonical_candidate"],
+            "quality": quality,
+            "blockers": blockers,
+            "metadata": {
+                "status_code": metadata.get("status_code"),
+                "title": metadata.get("title"),
+                "og_title": metadata.get("og_title"),
+                "error": metadata.get("error"),
+                "scrape_id": metadata.get("scrape_id"),
+            },
         }
     except Exception as e:
         logger.error("scrape_job failed: %s", e)
-        return {"error": f"Scraping failed: {str(e)}"}
+        return _scrape_error_response(
+            message=f"Scraping failed: {str(e)}",
+            code="scrape_exception",
+            inspection=inspection,
+        )
 
 
 async def scrape_job(url: str) -> dict:

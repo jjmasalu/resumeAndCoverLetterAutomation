@@ -522,3 +522,173 @@ def test_generate_document_sync_marks_render_failures(monkeypatch):
         "state": "failed",
         "detail": "render exploded",
     }
+
+
+def test_inspect_job_url_classifies_and_normalizes_sources():
+    lever = tools._inspect_job_url(
+        "https://jobs.lever.co/sprucesystems/b6ed1d39-d3e4-454f-8d8c-a5a65d64651f"
+    )
+    assert lever["platform"] == "lever"
+    assert lever["url_kind"] == "direct_job"
+    assert lever["canonical_candidate"] is True
+
+    greenhouse = tools._inspect_job_url(
+        "http://job-boards.greenhouse.io/xapo61/jobs/7572065003?gh_jid=123"
+    )
+    assert greenhouse["platform"] == "greenhouse"
+    assert greenhouse["url_kind"] == "direct_job"
+    assert greenhouse["normalized_url"] == "https://job-boards.greenhouse.io/xapo61/jobs/7572065003"
+
+    indeed = tools._inspect_job_url(
+        "https://www.indeed.com/q-software-engineer-remote-jobs.html"
+    )
+    assert indeed["platform"] == "aggregator"
+    assert indeed["url_kind"] == "aggregator_listing"
+    assert indeed["canonical_candidate"] is False
+
+
+def test_search_jobs_prefers_canonical_direct_results(monkeypatch):
+    calls = []
+
+    def fake_search(**kwargs):
+        calls.append(kwargs)
+        if kwargs.get("include_domains"):
+            return {
+                "results": [
+                    {
+                        "title": "Remote Software Engineer Jobs (NOW HIRING) - ZipRecruiter",
+                        "url": "https://www.ziprecruiter.com/Jobs/Remote-Software-Engineer",
+                        "content": "Listing page",
+                    },
+                    {
+                        "title": "Software Engineer (Remote - Work from Anywhere)",
+                        "url": "http://job-boards.greenhouse.io/xapo61/jobs/7572065003",
+                        "content": "Direct ATS job",
+                    },
+                    {
+                        "title": "Jobs at Remote",
+                        "url": "http://job-boards.greenhouse.io/remotecom",
+                        "content": "Board landing page",
+                    },
+                ]
+            }
+        raise AssertionError("search should stop after the canonical ATS pass")
+
+    monkeypatch.setattr(tools.tavily_client, "search", fake_search)
+
+    results = tools._search_jobs_sync("software engineer remote")
+
+    assert calls[0]["include_domains"] == tools.ATS_SEARCH_DOMAINS
+    assert results[0]["platform"] == "greenhouse"
+    assert results[0]["url_kind"] == "direct_job"
+    assert results[0]["canonical_candidate"] is True
+    assert all(item["url_kind"] != "aggregator_listing" for item in results)
+
+
+def test_scrape_job_rejects_listing_pages_before_provider(monkeypatch):
+    called = {"value": False}
+
+    def fake_scrape(*args, **kwargs):
+        called["value"] = True
+        raise AssertionError("provider should not be called for listing pages")
+
+    monkeypatch.setattr(tools.firecrawl_client, "scrape", fake_scrape)
+
+    result = tools._scrape_job_sync(
+        "https://www.indeed.com/q-software-engineer-remote-jobs.html"
+    )
+
+    assert called["value"] is False
+    assert result["error_code"] == "non_specific_job_url"
+    assert result["blockers"] == ["non_specific_job_page"]
+
+
+def test_scrape_job_flags_workday_access_issue(monkeypatch):
+    fake_doc = SimpleNamespace(
+        markdown='```json {"errorCode":"HTTP_400","httpStatus":400} ```',
+        metadata=SimpleNamespace(
+            status_code=400,
+            title=None,
+            og_title=None,
+            url="https://example.wd5.myworkdayjobs.com/en-US/recruiting/example/job/Role/123",
+            error="Bad Request",
+            scrape_id="scrape-1",
+        ),
+        html="",
+        links=[],
+    )
+
+    monkeypatch.setattr(tools.firecrawl_client, "scrape", lambda *args, **kwargs: fake_doc)
+
+    result = tools._scrape_job_sync(
+        "https://example.wd5.myworkdayjobs.com/en-US/recruiting/example/job/Role/123"
+    )
+
+    assert result["error_code"] == "upstream_http_400"
+    assert "workday_access_issue" in result["blockers"]
+
+
+def test_scrape_job_returns_structured_metadata_for_direct_job(monkeypatch):
+    fake_doc = SimpleNamespace(
+        markdown=(
+            "# Senior Platform Engineer\n\n"
+            "Remote\n\n"
+            "Build resilient systems that support product engineering teams at scale. "
+            "Partner with infrastructure, application, and data teams to improve deployment safety, "
+            "runtime reliability, observability, and incident response. "
+            "You will design internal platforms, improve developer experience, and lead architectural work "
+            "across cloud infrastructure, CI/CD, and service operations.\n\n"
+            "Requirements include strong backend engineering experience, production cloud systems knowledge, "
+            "and excellent collaboration across distributed teams."
+        ),
+        metadata=SimpleNamespace(
+            status_code=200,
+            title="Acme - Senior Platform Engineer",
+            og_title="Acme - Senior Platform Engineer",
+            url="https://jobs.lever.co/acme/role-123",
+            og_url="https://jobs.lever.co/acme/role-123",
+            error=None,
+            scrape_id="scrape-2",
+        ),
+        html="<h1>Senior Platform Engineer</h1>",
+        links=[],
+    )
+
+    monkeypatch.setattr(tools.firecrawl_client, "scrape", lambda *args, **kwargs: fake_doc)
+
+    result = tools._scrape_job_sync("https://jobs.lever.co/acme/role-123")
+
+    assert result["title"] == "Senior Platform Engineer"
+    assert result["platform"] == "lever"
+    assert result["url_kind"] == "direct_job"
+    assert result["quality"] == "high"
+    assert result["blockers"] == []
+
+
+def test_scrape_job_flags_workday_maintenance_page(monkeypatch):
+    fake_doc = SimpleNamespace(
+        markdown=(
+            "## Workday is currently unavailable.\n\n"
+            "We are experiencing a service interruption. "
+            "Your service will be restored as quickly as possible."
+        ),
+        metadata=SimpleNamespace(
+            status_code=200,
+            title="Workday is currently unavailable.",
+            og_title=None,
+            url="https://wd1.myworkdaysite.com/recruiting/shi/External/job/Somerset-NJ/Software-Engineer_JR1600",
+            error=None,
+            scrape_id="scrape-3",
+        ),
+        html="",
+        links=[],
+    )
+
+    monkeypatch.setattr(tools.firecrawl_client, "scrape", lambda *args, **kwargs: fake_doc)
+
+    result = tools._scrape_job_sync(
+        "https://wd1.myworkdaysite.com/recruiting/shi/External/job/Somerset-NJ/Software-Engineer_JR1600"
+    )
+
+    assert result["error_code"] == "workday_unavailable"
+    assert "workday_unavailable" in result["blockers"]

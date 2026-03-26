@@ -23,7 +23,7 @@ STREAM_FLUSH_PADDING = " " * 8192
 # Gemini function declarations
 SEARCH_JOBS_DECLARATION = types.FunctionDeclaration(
     name="search_jobs",
-    description="Search the web for job postings matching a query. Use when the user describes a role they want or asks to find jobs.",
+    description="Search the web for direct job postings matching a query. Results include canonical_candidate, platform, and url_kind. Prefer results where canonical_candidate=true and avoid scraping listing_page or aggregator_listing URLs.",
     parameters=types.Schema(
         type=types.Type.OBJECT,
         properties={
@@ -36,7 +36,7 @@ SEARCH_JOBS_DECLARATION = types.FunctionDeclaration(
 
 SCRAPE_JOB_DECLARATION = types.FunctionDeclaration(
     name="scrape_job",
-    description="Extract the full job description from a URL. Use after finding a job URL or when the user provides one.",
+    description="Extract the full job description from a specific job-posting URL. If the URL is a listing page, aggregator page, or blocked page, the tool will explain the blocker. Prefer canonical ATS or company-career job URLs.",
     parameters=types.Schema(
         type=types.Type.OBJECT,
         properties={
@@ -117,10 +117,11 @@ JOB_TO_RESUME_PROMPT = """You are a career assistant helping the user create a t
 Your workflow:
 1. Ask the user what position they're interested in, or accept a job URL
 2. Use search_jobs to find the posting, or scrape_job if they give a URL
-3. Analyze the job requirements
-4. Ask the user targeted questions about their relevant experience, skills, and education — one or two questions at a time, not everything at once
-5. When you learn something important about the user, use save_user_context to remember it
-6. Once you have enough info, use generate_document to create the resume and cover letter
+3. Prefer direct ATS/company job pages where `canonical_candidate=true`. Avoid scraping `listing_page` or `aggregator_listing` results.
+4. Analyze the job requirements
+5. Ask the user targeted questions about their relevant experience, skills, and education — one or two questions at a time, not everything at once
+6. When you learn something important about the user, use save_user_context to remember it
+7. Once you have enough info, use generate_document to create the resume and cover letter
 
 Be conversational and helpful. Ask specific questions based on what the job requires. Don't ask for information you already have from the user's context.
 
@@ -158,7 +159,8 @@ education, certifications, personal_info).
 Once the user confirms their profile, ask what kind of roles they're looking for
 (or suggest based on their profile). Then use search_jobs to find matching positions.
 
-For each promising result, use scrape_job to get the full description, then assess
+For each promising result, use scrape_job to get the full description, but prefer results where `canonical_candidate=true` and avoid `listing_page` or `aggregator_listing` URLs. If scraping reports a blocker, explain it to the user instead of pretending the job was read.
+Once you have a usable scrape, assess
 how well it matches the user's profile (0-100%). Once you have assessed the results,
 use present_job_results to show them to the user as structured cards.
 
@@ -176,9 +178,10 @@ Your workflow:
 2. Ask focused questions to understand their experience, skills, education, and what they're looking for
 3. Use save_user_context as you learn things about the user
 4. Once you have enough context, ask what roles they want and use search_jobs to find matching positions
-5. For each promising result, use scrape_job to get the full description, then assess how well it matches the user's profile (0-100%)
-6. Use present_job_results to show results as structured cards
-7. For selected jobs, generate tailored documents using generate_document
+5. For each promising result, use scrape_job to get the full description, but prefer results where `canonical_candidate=true` and avoid `listing_page` or `aggregator_listing` URLs. If scraping reports a blocker, tell the user what was blocked and move on to another result.
+6. Assess how well each successfully scraped result matches the user's profile (0-100%)
+7. Use present_job_results to show results as structured cards
+8. For selected jobs, generate tailored documents using generate_document
 
 Be proactive in suggesting roles based on the user's skills and experience.
 
@@ -600,10 +603,22 @@ def _tool_status_payload(
 
     if state == "done":
         if name == "search_jobs" and isinstance(result, list):
+            canonical_count = sum(
+                1
+                for item in result
+                if isinstance(item, dict) and item.get("canonical_candidate")
+            )
             detail = f"Found {len(result)} potential job posting{'s' if len(result) != 1 else ''}."
-            meta = {"result_count": len(result)}
+            if canonical_count:
+                detail += f" {canonical_count} look like direct postings."
+            meta = {"result_count": len(result), "canonical_count": canonical_count}
         elif name == "scrape_job" and isinstance(result, dict) and "error" not in result:
             detail = "Captured the job description."
+            if result.get("quality") == "medium":
+                detail = "Captured the job description with lower confidence."
+            blockers = result.get("blockers") or []
+            if blockers:
+                meta = {"blockers": blockers}
         elif name == "save_user_context":
             category = args.get("category")
             detail = f"Saved {str(category).replace('_', ' ')} to memory." if category else "Saved new profile details."
@@ -849,8 +864,8 @@ async def _execute_tool(
             job_data = supabase.table("jobs").insert({
                 "conversation_id": conversation_id,
                 "user_id": user_id,
-                "title": args.get("url", ""),
-                "url": args.get("url", ""),
+                "title": result.get("title") or args.get("url", ""),
+                "url": result.get("canonical_url") or result.get("url") or args.get("url", ""),
                 "description_md": result.get("description_md", ""),
             }).execute()
             if job_data.data:

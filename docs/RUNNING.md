@@ -211,6 +211,24 @@ This is the workflow to use when adding:
 - new spacing variants
 - denser or more complex layout behavior
 
+## Job Search and Scrape Diagnostics
+
+Use the live-provider probe to inspect what the current job-ingestion engine is doing:
+
+```bash
+cd backend
+.venv/bin/python ../scripts/probe_job_ingestion.py
+.venv/bin/python ../scripts/probe_job_ingestion.py --query "product designer" --location remote
+.venv/bin/python ../scripts/probe_job_ingestion.py --url "https://jobs.lever.co/inkitt/3d466a0d-1de6-40c6-ade9-9aec2b14c71e"
+.venv/bin/python ../scripts/probe_job_ingestion.py --json
+```
+
+What this probe reports:
+- search result classification (`platform`, `url_kind`, `canonical_candidate`)
+- whether the engine is finding direct ATS/company job pages or broad listing pages
+- scrape blockers such as non-specific job pages, upstream HTTP errors, access walls, and Workday-specific failures
+- a real end-to-end scrape of the first canonical search result when one is found
+
 ## Team Access Gate
 
 The shared team-access code is stored in Supabase and is separate from Supabase Auth.
