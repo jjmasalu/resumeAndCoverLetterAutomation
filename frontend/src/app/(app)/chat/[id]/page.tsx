@@ -24,6 +24,7 @@ import ChatMessage from "@/components/ChatMessage";
 import ActivityTimeline, { type ActivityStep } from "@/components/ActivityTimeline";
 import DownloadCard from "@/components/DownloadCard";
 import JobCard from "@/components/JobCard";
+import { MODE_COPY } from "@/lib/conversation-modes";
 
 interface Message {
   role: "user" | "assistant";
@@ -365,8 +366,12 @@ export default function ChatPage() {
     setAttachError(null);
     try {
       const upload = await apiUpload<UploadResponse>(`/conversations/${id}/upload`, file);
+      const attachmentMessage =
+        activeConversation?.mode === "find_jobs"
+          ? `I've uploaded an additional document: ${file.name}. Please review it for my job search.`
+          : `I've uploaded a supporting document: ${file.name}. Please use it to tailor my application materials.`;
       await doSend(
-        `I've uploaded an additional document: ${file.name}. Please review it.`,
+        attachmentMessage,
         [upload.file_id]
       );
     } catch (err) {
@@ -400,7 +405,6 @@ export default function ChatPage() {
     pendingInitialMessage && !initialSent.current && messages.length === 0;
   const showCenteredLoader = loadingMessages && messages.length === 0 && !isAwaitingInitialMessage;
   const showEmptyState = !loadingMessages && messages.length === 0 && !isAwaitingInitialMessage;
-  const hasStreamingAssistant = streaming && messages[messages.length - 1]?.role === "assistant";
   const showTypingIndicator = streaming;
   const documentGroups = groupDocumentsByVariant(documents);
 
@@ -483,7 +487,9 @@ export default function ChatPage() {
             </div>
             <p className="text-sm font-medium text-text-primary mb-1">Start a conversation</p>
             <p className="text-xs text-text-tertiary text-center max-w-xs">
-              Describe the job you want to apply for, or paste a job URL.
+              {activeConversation?.mode === "find_jobs"
+                ? MODE_COPY.find_jobs.emptyStateHint
+                : MODE_COPY.job_to_resume.emptyStateHint}
             </p>
           </div>
         )}
@@ -591,36 +597,36 @@ export default function ChatPage() {
               streaming ? "opacity-50" : ""
             }`}
           >
-            {activeConversation?.mode === "find_jobs" && (
-              <>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".pdf,.docx,.png,.jpg,.jpeg"
-                  onChange={handleAttachment}
-                  className="hidden"
-                />
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={streaming}
-                  className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 bg-accent-muted text-accent hover:bg-accent/20 transition"
-                  aria-label="Attach file"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-                  </svg>
-                </button>
-                {attachError && (
-                  <span className="text-xs text-red-500">{attachError}</span>
-                )}
-              </>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.docx,.png,.jpg,.jpeg"
+              onChange={handleAttachment}
+              className="hidden"
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={streaming}
+              className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 bg-accent-muted text-accent hover:bg-accent/20 transition"
+              aria-label="Attach file"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+              </svg>
+            </button>
+            {attachError && (
+              <span className="text-xs text-red-500">{attachError}</span>
             )}
             <textarea
               ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Message Resume AI..."
+              placeholder={
+                activeConversation?.mode === "find_jobs"
+                  ? "Describe target roles, refine your search, or upload another file..."
+                  : "Paste a job URL, company + role, or ask to tailor your documents..."
+              }
               rows={1}
               disabled={streaming}
               className="flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-tertiary resize-none outline-none max-h-40"

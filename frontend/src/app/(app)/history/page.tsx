@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useApp } from "@/components/AppContext";
 import { apiJson, apiFetch } from "@/lib/api";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import { MODE_COPY, getModeCopy } from "@/lib/conversation-modes";
 
 type ModeFilter = "all" | "job_to_resume" | "find_jobs";
 type StatusFilter = "all" | "active" | "completed";
@@ -127,7 +128,7 @@ export default function HistoryPage() {
                   : "bg-bg-secondary text-text-secondary border border-border hover:text-text-primary"
               }`}
             >
-              {f === "all" ? "All modes" : f === "job_to_resume" ? "Job → Resume" : "Find Jobs"}
+              {f === "all" ? "All modes" : MODE_COPY[f].label}
             </button>
           ))}
           <div className="w-px h-5 bg-border self-center mx-1" />
@@ -250,7 +251,7 @@ export default function HistoryPage() {
                       {c.title}
                     </p>
                     <p className="text-[11px] text-text-tertiary mt-0.5">
-                      {c.mode === "job_to_resume" ? "Job → Resume" : "Find Jobs"} ·{" "}
+                      {getModeCopy(c.mode).label} ·{" "}
                       {new Date(c.created_at).toLocaleDateString()}
                     </p>
                   </div>

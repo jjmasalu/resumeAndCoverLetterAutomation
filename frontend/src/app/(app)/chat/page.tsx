@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { apiJson, apiUpload } from "@/lib/api";
 import { storePendingChatMessage } from "@/lib/pending-chat";
 import FileUpload from "@/components/FileUpload";
+import { MODE_COPY } from "@/lib/conversation-modes";
 
 export default function ChatIndexPage() {
   return (
@@ -95,7 +96,7 @@ function ChatIndexContent() {
             </div>
             <h2 className="text-base font-semibold text-text-primary mb-1.5">Start a conversation</h2>
             <p className="text-sm text-text-tertiary text-center max-w-xs mb-5">
-              Paste a job posting URL or describe the role you&apos;re targeting.
+              {MODE_COPY.job_to_resume.emptyStateHint}
             </p>
           </>
         ) : (
@@ -132,7 +133,7 @@ function ChatIndexContent() {
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
             </svg>
-            Job &rarr; Resume
+            {MODE_COPY.job_to_resume.label}
           </button>
           <button
             onClick={() => setMode("find_jobs")}
@@ -146,7 +147,7 @@ function ChatIndexContent() {
               <circle cx="11" cy="11" r="8" />
               <path d="m21 21-4.35-4.35" />
             </svg>
-            Find Jobs
+            {MODE_COPY.find_jobs.label}
           </button>
         </div>
       </div>
@@ -167,7 +168,7 @@ function ChatIndexContent() {
               placeholder={
                 mode === "find_jobs"
                   ? "Describe your experience and what roles you're looking for..."
-                  : "Message Resume AI..."
+                  : "Paste a job URL, company + role, or job description..."
               }
               rows={1}
               disabled={sending}

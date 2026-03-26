@@ -4,6 +4,7 @@ import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { apiJson, apiUpload } from "@/lib/api";
+import { MODE_COPY } from "@/lib/conversation-modes";
 
 const BRAND_NAME = "Resume AI";
 
@@ -16,6 +17,14 @@ export default function LandingPage() {
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
+
+  const buildSpecificJobMessage = (value: string) => {
+    const trimmed = value.trim();
+    const looksLikeUrl = /^(https?:\/\/|www\.)/i.test(trimmed);
+    return looksLikeUrl
+      ? `I want to apply for this specific job posting: ${trimmed}`
+      : `I want to target this specific job or role: ${trimmed}`;
+  };
 
   const ensureAuth = async (returnTo?: string): Promise<boolean> => {
     const supabase = createClient();
@@ -37,7 +46,7 @@ export default function LandingPage() {
         method: "POST",
         body: JSON.stringify({ mode: "job_to_resume" }),
       });
-      const message = `I want to apply for this job: ${input.trim()}`;
+      const message = buildSpecificJobMessage(input);
       router.push(`/chat/${conv.id}?initial=${encodeURIComponent(message)}`);
     } catch {
       router.push("/login");
@@ -109,7 +118,7 @@ export default function LandingPage() {
           </h1>
 
           <p className="text-base text-text-tertiary max-w-md mx-auto mb-8 leading-relaxed">
-            Two tools. One goal. Get the right job with the right documents.
+            Start from a specific job, or let Resume AI find roles that fit.
           </p>
 
           {/* Tab Switcher */}
@@ -123,7 +132,7 @@ export default function LandingPage() {
                     : "text-text-secondary hover:text-text-primary"
                 }`}
               >
-                I have a job posting
+                {MODE_COPY.job_to_resume.label}
               </button>
               <button
                 onClick={() => setActiveTab("find_jobs")}
@@ -133,13 +142,16 @@ export default function LandingPage() {
                     : "text-text-secondary hover:text-text-primary"
                 }`}
               >
-                Find jobs for me
+                {MODE_COPY.find_jobs.label}
               </button>
             </div>
 
             {/* Tab Content */}
             {activeTab === "job_to_resume" ? (
               <>
+                <p className="mb-3 text-xs text-text-tertiary">
+                  {MODE_COPY.job_to_resume.description}
+                </p>
                 <div className="bg-bg-secondary border border-border rounded-xl p-1.5 flex gap-1.5">
                   <div className="flex-1 flex items-center gap-2 px-3">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-tertiary flex-shrink-0">
@@ -149,7 +161,7 @@ export default function LandingPage() {
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && handleUrlSubmit()}
-                      placeholder="Paste a job posting URL..."
+                      placeholder="Paste a job URL, company + role, or job description..."
                       className="flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-tertiary outline-none py-2"
                     />
                   </div>
@@ -162,15 +174,15 @@ export default function LandingPage() {
                   </button>
                 </div>
                 <div className="flex items-center justify-center gap-4 mt-3 text-[11px] text-text-tertiary">
-                  <span>LinkedIn</span>
-                  <span className="text-border">&middot;</span>
-                  <span>Indeed</span>
+                  <span>Company careers</span>
                   <span className="text-border">&middot;</span>
                   <span>Greenhouse</span>
                   <span className="text-border">&middot;</span>
                   <span>Lever</span>
                   <span className="text-border">&middot;</span>
-                  <span>Any URL</span>
+                  <span>Ashby</span>
+                  <span className="text-border">&middot;</span>
+                  <span>Workday</span>
                 </div>
               </>
             ) : (
@@ -217,6 +229,9 @@ export default function LandingPage() {
                   )}
                 </div>
                 <div className="mt-3">
+                  <p className="mb-2 text-xs text-text-tertiary">
+                    {MODE_COPY.find_jobs.description}
+                  </p>
                   <button
                     onClick={async () => {
                       if (!(await ensureAuth("/chat?mode=find_jobs"))) return;
@@ -224,7 +239,7 @@ export default function LandingPage() {
                     }}
                     className="text-xs text-text-tertiary hover:text-accent transition bg-transparent border-none cursor-pointer"
                   >
-                    or describe your experience &rarr;
+                    or tell us about your background &rarr;
                   </button>
                 </div>
               </>
@@ -262,8 +277,8 @@ export default function LandingPage() {
               icon: (
                 <path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
               ),
-              title: "Paste a URL or upload",
-              desc: "Drop any job posting link, or upload your resume to discover matching roles.",
+              title: "Start with a target or your resume",
+              desc: "Bring a specific job, or upload your resume so we can find matching roles.",
             },
             {
               icon: (

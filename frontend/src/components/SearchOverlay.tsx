@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useApp, type Conversation } from "./AppContext";
+import { MODE_COPY, getModeCopy } from "@/lib/conversation-modes";
 
 interface SearchOverlayProps {
   open: boolean;
@@ -104,7 +105,7 @@ function SearchOverlayInner({ onClose }: { onClose: () => void }) {
                   : "bg-bg-tertiary text-text-secondary hover:text-text-primary"
               }`}
             >
-              {f === "all" ? "All" : f === "job_to_resume" ? "Job → Resume" : "Find Jobs"}
+              {f === "all" ? "All" : MODE_COPY[f].label}
             </button>
           ))}
         </div>
@@ -132,7 +133,7 @@ function SearchOverlayInner({ onClose }: { onClose: () => void }) {
                 <div className="flex-1 min-w-0">
                   <div className="text-sm text-text-primary truncate">{c.title}</div>
                   <div className="text-[11px] text-text-tertiary">
-                    {c.mode === "job_to_resume" ? "Job → Resume" : "Find Jobs"} ·{" "}
+                    {getModeCopy(c.mode).label} ·{" "}
                     {new Date(c.created_at).toLocaleDateString()}
                   </div>
                 </div>
