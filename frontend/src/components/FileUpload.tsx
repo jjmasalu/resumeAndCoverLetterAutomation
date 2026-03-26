@@ -1,25 +1,20 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
-
-const ACCEPTED_TYPES = [
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "image/png",
-  "image/jpeg",
-];
-const ACCEPTED_EXTENSIONS = ".pdf,.docx,.png,.jpg,.jpeg";
-const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+import {
+  ATTACHMENT_ACCEPTED_EXTENSIONS_ATTR,
+  validateAttachmentFiles,
+} from "@/lib/attachment-validation";
 
 interface FileUploadProps {
-  onFileSelect: (file: File) => void;
+  onFilesSelect: (files: File[]) => void;
   selecting?: boolean;
   selectedFilename?: string | null;
   statusLabel?: string;
 }
 
 export default function FileUpload({
-  onFileSelect,
+  onFilesSelect,
   selecting,
   selectedFilename,
   statusLabel = "Ready to send",
@@ -28,43 +23,36 @@ export default function FileUpload({
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const validate = useCallback((file: File): string | null => {
-    if (!ACCEPTED_TYPES.includes(file.type)) {
-      return "Supported formats: PDF, DOCX, PNG, JPG";
-    }
-    if (file.size > MAX_SIZE) {
-      return "File must be under 10MB";
-    }
-    return null;
-  }, []);
-
   const handleFile = useCallback(
-    (file: File) => {
+    (files: File[]) => {
       setError(null);
-      const err = validate(file);
-      if (err) {
-        setError(err);
+      const { accepted, errorMessage } = validateAttachmentFiles(files);
+      if (errorMessage) {
+        setError(errorMessage);
+      }
+      if (accepted.length === 0) {
         return;
       }
-      onFileSelect(file);
+      onFilesSelect(accepted);
     },
-    [validate, onFileSelect]
+    [onFilesSelect]
   );
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
       setDragOver(false);
-      const file = e.dataTransfer.files[0];
-      if (file) handleFile(file);
+      const files = Array.from(e.dataTransfer.files || []);
+      if (files.length > 0) handleFile(files);
     },
     [handleFile]
   );
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) handleFile(file);
+      const files = Array.from(e.target.files || []);
+      if (files.length > 0) handleFile(files);
+      e.target.value = "";
     },
     [handleFile]
   );
@@ -104,7 +92,8 @@ export default function FileUpload({
         <input
           ref={inputRef}
           type="file"
-          accept={ACCEPTED_EXTENSIONS}
+          multiple
+          accept={ATTACHMENT_ACCEPTED_EXTENSIONS_ATTR}
           onChange={handleChange}
           className="hidden"
         />

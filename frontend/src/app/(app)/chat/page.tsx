@@ -12,6 +12,8 @@ import {
   readPendingLandingIntent,
 } from "@/lib/pending-landing-intent";
 import { takePendingFiles } from "@/lib/pending-files";
+import { ATTACHMENT_ACCEPTED_EXTENSIONS_ATTR, validateAttachmentFiles } from "@/lib/attachment-validation";
+import { useFileDropzone } from "@/lib/use-file-dropzone";
 
 export default function ChatIndexPage() {
   return (
@@ -34,6 +36,20 @@ function ChatIndexContent() {
   const [attachError, setAttachError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const stageFiles = useCallback((files: File[]) => {
+    const { accepted, errorMessage } = validateAttachmentFiles(files);
+    if (errorMessage) {
+      setAttachError(errorMessage);
+    }
+    if (accepted.length === 0) {
+      return;
+    }
+    setPendingFiles((prev) => [...prev, ...accepted]);
+    setAttachError(null);
+  }, []);
+
+  const { isDragOver, dropzoneProps } = useFileDropzone(stageFiles);
 
   const adjustTextarea = useCallback(() => {
     const el = textareaRef.current;
@@ -124,11 +140,6 @@ function ChatIndexContent() {
     createAndRedirect(message, pendingFiles);
   };
 
-  const handleFileSelect = (file: File) => {
-    setPendingFiles((prev) => [...prev, file]);
-    setAttachError(null);
-  };
-
   const removePendingFile = (index: number) => {
     setPendingFiles((prev) => prev.filter((_, currentIndex) => currentIndex !== index));
   };
@@ -160,7 +171,7 @@ function ChatIndexContent() {
         ) : (
           <>
             <FileUpload
-              onFileSelect={handleFileSelect}
+              onFilesSelect={stageFiles}
               selecting={uploadingAttachments}
               selectedFilename={pendingFiles.length === 1 ? pendingFiles[0].name : null}
               statusLabel="Ready to send"
@@ -216,10 +227,11 @@ function ChatIndexContent() {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".pdf,.docx,.png,.jpg,.jpeg"
+            multiple
+            accept={ATTACHMENT_ACCEPTED_EXTENSIONS_ATTR}
             onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) handleFileSelect(file);
+              const files = Array.from(e.target.files || []);
+              if (files.length > 0) stageFiles(files);
               e.target.value = "";
             }}
             className="hidden"
@@ -231,8 +243,13 @@ function ChatIndexContent() {
             disabled={isComposerBusy}
           />
           <div
+            {...dropzoneProps}
             className={`flex items-center gap-2 bg-bg-secondary border border-border rounded-xl px-3.5 py-2.5 transition ${
-              isComposerBusy ? "opacity-50" : ""
+              isComposerBusy
+                ? "opacity-50"
+                : isDragOver
+                  ? "border-accent bg-accent-muted/40 ring-1 ring-accent/30"
+                  : ""
             }`}
           >
             <button
@@ -279,7 +296,9 @@ function ChatIndexContent() {
           </div>
           <div className="flex justify-between mt-1.5 text-[10px] text-text-tertiary px-1">
             <span>
-              {pendingFiles.length > 0 && !uploadingAttachments
+              {isDragOver
+                ? "Drop files here to stage them"
+                : pendingFiles.length > 0 && !uploadingAttachments
                 ? "Attachments stay local until you send"
                 : uploadingAttachments
                   ? "Uploading attachments with this message..."

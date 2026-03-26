@@ -27,6 +27,11 @@ import DownloadCard from "@/components/DownloadCard";
 import JobCard from "@/components/JobCard";
 import AttachmentComposer from "@/components/AttachmentComposer";
 import { MODE_COPY } from "@/lib/conversation-modes";
+import {
+  ATTACHMENT_ACCEPTED_EXTENSIONS_ATTR,
+  validateAttachmentFiles,
+} from "@/lib/attachment-validation";
+import { useFileDropzone } from "@/lib/use-file-dropzone";
 
 interface Message {
   role: "user" | "assistant";
@@ -134,6 +139,20 @@ export default function ChatPage() {
   const activityStepsRef = useRef<ActivityStep[]>([]);
   const skipNextHistoryLoadRef = useRef(false);
   const pendingAutoSendTimeoutRef = useRef<number | null>(null);
+
+  const stageFiles = useCallback((files: File[]) => {
+    const { accepted, errorMessage } = validateAttachmentFiles(files);
+    if (errorMessage) {
+      setAttachError(errorMessage);
+    }
+    if (accepted.length === 0) {
+      return;
+    }
+    setPendingFiles((prev) => [...prev, ...accepted]);
+    setAttachError(null);
+  }, []);
+
+  const { isDragOver, dropzoneProps } = useFileDropzone(stageFiles);
 
   useEffect(() => {
     activityStepsRef.current = activitySteps;
@@ -365,10 +384,9 @@ export default function ChatPage() {
   }, [id]);
 
   const handleAttachment = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setAttachError(null);
-    setPendingFiles((prev) => [...prev, file]);
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    stageFiles(files);
     e.target.value = "";
   };
 
@@ -628,14 +646,20 @@ export default function ChatPage() {
             disabled={isComposerBusy}
           />
           <div
+            {...dropzoneProps}
             className={`flex items-center gap-2 bg-bg-secondary border border-border rounded-xl px-3.5 py-2.5 transition ${
               isComposerBusy ? "opacity-50" : ""
+            } ${
+              !isComposerBusy && isDragOver
+                ? "border-accent bg-accent-muted/40 ring-1 ring-accent/30"
+                : ""
             }`}
           >
             <input
               ref={fileInputRef}
               type="file"
-              accept=".pdf,.docx,.png,.jpg,.jpeg"
+              multiple
+              accept={ATTACHMENT_ACCEPTED_EXTENSIONS_ATTR}
               onChange={handleAttachment}
               className="hidden"
             />
@@ -683,7 +707,9 @@ export default function ChatPage() {
           </div>
           <div className="flex justify-between mt-1.5 text-[10px] text-text-tertiary px-1">
             <span>
-              {pendingFiles.length > 0 && !uploadingAttachments
+              {isDragOver
+                ? "Drop files here to stage them"
+                : pendingFiles.length > 0 && !uploadingAttachments
                 ? "Attachments stay local until you send"
                 : uploadingAttachments
                   ? "Uploading attachments with this message..."

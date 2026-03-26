@@ -8,6 +8,10 @@ import {
   storePendingLandingIntent,
 } from "@/lib/pending-landing-intent";
 import { stashPendingFiles } from "@/lib/pending-files";
+import {
+  ATTACHMENT_ACCEPTED_EXTENSIONS_ATTR,
+  validateAttachmentFiles,
+} from "@/lib/attachment-validation";
 
 const BRAND_NAME = "Resume AI";
 
@@ -18,6 +22,7 @@ export default function LandingPage() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [stagingFile, setStagingFile] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
   const [sessionChecked, setSessionChecked] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -69,18 +74,27 @@ export default function LandingPage() {
     }
   };
 
-  const handleFileUpload = async (file: File) => {
+  const handleFileUpload = async (files: File[]) => {
     setStagingFile(true);
     try {
       if (!(await ensureAuth("/chat?mode=find_jobs"))) {
         setStagingFile(false);
         return;
       }
-      const token = stashPendingFiles([file]);
+      const { accepted, errorMessage } = validateAttachmentFiles(files);
+      if (errorMessage) {
+        setFileError(errorMessage);
+      }
+      if (accepted.length === 0) {
+        setStagingFile(false);
+        return;
+      }
+      setFileError(null);
+      const token = stashPendingFiles(accepted);
       storePendingLandingIntent({
         kind: "find_jobs_attachment",
         token,
-        filename: file.name,
+        filename: accepted[0].name,
       });
       router.push("/chat?mode=find_jobs");
     } catch {
@@ -91,8 +105,9 @@ export default function LandingPage() {
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) handleFileUpload(file);
+    const files = Array.from(e.target.files || []);
+    if (files.length > 0) handleFileUpload(files);
+    e.target.value = "";
   };
 
   const handleUploadClick = async () => {
@@ -222,7 +237,8 @@ export default function LandingPage() {
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".pdf,.docx,.png,.jpg,.jpeg"
+                  multiple
+                  accept={ATTACHMENT_ACCEPTED_EXTENSIONS_ATTR}
                   onChange={handleFileChange}
                   className="hidden"
                 />
@@ -232,10 +248,10 @@ export default function LandingPage() {
                   onDrop={async (e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    const file = e.dataTransfer.files?.[0];
-                    if (file) {
+                    const files = Array.from(e.dataTransfer.files || []);
+                    if (files.length > 0) {
                       if (!(await ensureAuth("/chat?mode=find_jobs"))) return;
-                      handleFileUpload(file);
+                      handleFileUpload(files);
                     }
                   }}
                   className="bg-bg-secondary border-2 border-dashed border-border rounded-xl p-8 text-center cursor-pointer hover:border-text-tertiary transition"
@@ -260,6 +276,9 @@ export default function LandingPage() {
                     </>
                   )}
                 </div>
+                {fileError && (
+                  <p className="mt-2 text-xs text-danger">{fileError}</p>
+                )}
                 <div className="mt-3">
                   <p className="mb-2 text-xs text-text-tertiary">
                     {MODE_COPY.find_jobs.description}
