@@ -3,11 +3,11 @@
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { apiJson, apiUpload } from "@/lib/api";
 import { MODE_COPY } from "@/lib/conversation-modes";
 import {
   storePendingLandingIntent,
 } from "@/lib/pending-landing-intent";
+import { stashPendingFiles } from "@/lib/pending-files";
 
 const BRAND_NAME = "Resume AI";
 
@@ -17,7 +17,7 @@ export default function LandingPage() {
   const [activeTab, setActiveTab] = useState<Tab>("job_to_resume");
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [stagingFile, setStagingFile] = useState(false);
   const [sessionChecked, setSessionChecked] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -70,19 +70,23 @@ export default function LandingPage() {
   };
 
   const handleFileUpload = async (file: File) => {
-    setUploading(true);
+    setStagingFile(true);
     try {
-      if (!(await ensureAuth("/chat?mode=find_jobs"))) { setUploading(false); return; }
-      const conv = await apiJson<{ id: string }>("/conversations", {
-        method: "POST",
-        body: JSON.stringify({ mode: "find_jobs" }),
+      if (!(await ensureAuth("/chat?mode=find_jobs"))) {
+        setStagingFile(false);
+        return;
+      }
+      const token = stashPendingFiles([file]);
+      storePendingLandingIntent({
+        kind: "find_jobs_attachment",
+        token,
+        filename: file.name,
       });
-      await apiUpload(`/conversations/${conv.id}/upload`, file);
-      router.push(`/chat/${conv.id}?initial=${encodeURIComponent("I've uploaded my resume. Please analyze it and help me find matching jobs.")}`);
+      router.push("/chat?mode=find_jobs");
     } catch {
       router.push("/login");
     } finally {
-      setUploading(false);
+      setStagingFile(false);
     }
   };
 
@@ -236,10 +240,10 @@ export default function LandingPage() {
                   }}
                   className="bg-bg-secondary border-2 border-dashed border-border rounded-xl p-8 text-center cursor-pointer hover:border-text-tertiary transition"
                 >
-                  {uploading ? (
+                  {stagingFile ? (
                     <>
                       <div className="w-5 h-5 border-2 border-accent border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-                      <div className="text-sm text-text-secondary">Uploading...</div>
+                      <div className="text-sm text-text-secondary">Preparing...</div>
                     </>
                   ) : (
                     <>

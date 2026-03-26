@@ -1,6 +1,7 @@
 import logging
 import tempfile
 import os
+import uuid
 from datetime import datetime, timezone
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -542,7 +543,7 @@ async def upload_file(
     logger.info("upload size=%d bytes, uploading to storage...", len(file_bytes))
 
     # Upload to Supabase Storage
-    storage_path = f"{user_id}/{conversation_id}/{file.filename}"
+    storage_path = f"{user_id}/{conversation_id}/{uuid.uuid4()}-{file.filename}"
     try:
         supabase.storage.from_("uploads").upload(
             storage_path,

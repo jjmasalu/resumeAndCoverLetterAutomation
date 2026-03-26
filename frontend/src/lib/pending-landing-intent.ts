@@ -6,6 +6,11 @@ export type PendingLandingIntent =
   | {
       kind: "specific_job";
       input: string;
+    }
+  | {
+      kind: "find_jobs_attachment";
+      token: string;
+      filename: string;
     };
 
 export function storePendingLandingIntent(intent: PendingLandingIntent) {
@@ -20,6 +25,13 @@ export function readPendingLandingIntent(): PendingLandingIntent | null {
   try {
     const parsed = JSON.parse(raw) as PendingLandingIntent;
     if (parsed?.kind === "specific_job" && typeof parsed.input === "string") {
+      return parsed;
+    }
+    if (
+      parsed?.kind === "find_jobs_attachment" &&
+      typeof parsed.token === "string" &&
+      typeof parsed.filename === "string"
+    ) {
       return parsed;
     }
   } catch {

@@ -13,11 +13,17 @@ const MAX_SIZE = 10 * 1024 * 1024; // 10MB
 
 interface FileUploadProps {
   onFileSelect: (file: File) => void;
-  uploading?: boolean;
-  uploadedFilename?: string | null;
+  selecting?: boolean;
+  selectedFilename?: string | null;
+  statusLabel?: string;
 }
 
-export default function FileUpload({ onFileSelect, uploading, uploadedFilename }: FileUploadProps) {
+export default function FileUpload({
+  onFileSelect,
+  selecting,
+  selectedFilename,
+  statusLabel = "Ready to send",
+}: FileUploadProps) {
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -64,7 +70,7 @@ export default function FileUpload({ onFileSelect, uploading, uploadedFilename }
   );
 
   // Uploaded state
-  if (uploadedFilename) {
+  if (selectedFilename) {
     return (
       <div className="w-full max-w-xs border border-border rounded-xl px-4 py-3 flex items-center gap-3">
         <div className="w-8 h-8 rounded-lg bg-accent-muted flex items-center justify-center flex-shrink-0">
@@ -73,8 +79,8 @@ export default function FileUpload({ onFileSelect, uploading, uploadedFilename }
           </svg>
         </div>
         <div className="min-w-0">
-          <div className="text-xs text-text-primary truncate">{uploadedFilename}</div>
-          <div className="text-[10px] text-text-tertiary">Uploaded</div>
+          <div className="text-xs text-text-primary truncate">{selectedFilename}</div>
+          <div className="text-[10px] text-text-tertiary">{statusLabel}</div>
         </div>
       </div>
     );
@@ -103,10 +109,10 @@ export default function FileUpload({ onFileSelect, uploading, uploadedFilename }
           className="hidden"
         />
 
-        {uploading ? (
+        {selecting ? (
           <>
             <div className="w-5 h-5 border-2 border-accent border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-            <div className="text-xs text-text-secondary">Uploading...</div>
+            <div className="text-xs text-text-secondary">Preparing...</div>
           </>
         ) : (
           <>

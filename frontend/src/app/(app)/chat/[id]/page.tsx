@@ -12,6 +12,7 @@ import {
 import {
   clearPendingChatMessage,
   readPendingChatMessage,
+  type PendingChatMessage,
 } from "@/lib/pending-chat";
 import {
   documentBundleDescription,
@@ -118,10 +119,12 @@ export default function ChatPage() {
   const [documents, setDocuments] = useState<DocumentEvent[]>([]);
   const [jobResults, setJobResults] = useState<JobResultEvent[]>([]);
   const [regeneratingDocumentId, setRegeneratingDocumentId] = useState<string | null>(null);
-  const [pendingInitialMessage, setPendingInitialMessage] = useState<string | null>(null);
+  const [pendingInitialMessage, setPendingInitialMessage] = useState<PendingChatMessage | null>(null);
   const [initialMessageChecked, setInitialMessageChecked] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(true);
   const [attachError, setAttachError] = useState<string | null>(null);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [uploadingAttachments, setUploadingAttachments] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -360,25 +363,11 @@ export default function ChatPage() {
     }
   }, [id]);
 
-  const handleAttachment = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAttachment = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setAttachError(null);
-    try {
-      const upload = await apiUpload<UploadResponse>(`/conversations/${id}/upload`, file);
-      const attachmentMessage =
-        activeConversation?.mode === "find_jobs"
-          ? `I've uploaded an additional document: ${file.name}. Please review it for my job search.`
-          : `I've uploaded a supporting document: ${file.name}. Please use it to tailor my application materials.`;
-      await doSend(
-        attachmentMessage,
-        [upload.file_id]
-      );
-    } catch (err) {
-      console.error("Upload failed:", err);
-      setAttachError(err instanceof Error ? err.message : "Upload failed — please try again.");
-    }
-    // Reset input so same file can be re-selected
+    setPendingFiles((prev) => [...prev, file]);
     e.target.value = "";
   };
 
@@ -396,7 +385,7 @@ export default function ChatPage() {
       setPendingInitialMessage(null);
       pendingAutoSendTimeoutRef.current = window.setTimeout(() => {
         pendingAutoSendTimeoutRef.current = null;
-        void doSend(messageToSend);
+        void doSend(messageToSend.content, messageToSend.attachmentFileIds ?? []);
       }, 50);
     }
   }, [pendingInitialMessage, loadingMessages, id, doSend]);
@@ -426,11 +415,48 @@ export default function ChatPage() {
     adjustTextarea();
   }, [input, adjustTextarea]);
 
-  const sendMessage = () => {
-    if (!input.trim() || streaming) return;
-    const userMsg = input.trim();
+  const removePendingFile = (index: number) => {
+    setPendingFiles((prev) => prev.filter((_, currentIndex) => currentIndex !== index));
+  };
+
+  const uploadPendingFiles = useCallback(async () => {
+    if (pendingFiles.length === 0) return [];
+    setUploadingAttachments(true);
+    try {
+      const uploads = await Promise.all(
+        pendingFiles.map((file) =>
+          apiUpload<UploadResponse>(`/conversations/${id}/upload`, file)
+        )
+      );
+      setPendingFiles([]);
+      return uploads.map((upload) => upload.file_id);
+    } finally {
+      setUploadingAttachments(false);
+    }
+  }, [id, pendingFiles]);
+
+  const sendMessage = async () => {
+    if (streaming || uploadingAttachments) return;
+    const trimmedInput = input.trim();
+    if (!trimmedInput && pendingFiles.length === 0) return;
+
+    const fallbackMessage =
+      activeConversation?.mode === "find_jobs"
+        ? `I've attached ${pendingFiles.map((file) => file.name).join(", ")}. Please review ${pendingFiles.length > 1 ? "them" : "it"} for my job search.`
+        : `I've attached ${pendingFiles.map((file) => file.name).join(", ")}. Please use ${pendingFiles.length > 1 ? "them" : "it"} to tailor my application materials.`;
+
+    const userMsg = trimmedInput || fallbackMessage;
     setInput("");
-    doSend(userMsg);
+    setAttachError(null);
+
+    try {
+      const attachmentFileIds = await uploadPendingFiles();
+      await doSend(userMsg, attachmentFileIds);
+    } catch (err) {
+      console.error("Upload failed:", err);
+      setAttachError(err instanceof Error ? err.message : "Upload failed — please try again.");
+      setInput((prev) => prev || trimmedInput);
+    }
   };
 
   const handleRegenerateDocument = async (documentId: string) => {
@@ -465,9 +491,11 @@ export default function ChatPage() {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      sendMessage();
+      void sendMessage();
     }
   };
+
+  const isComposerBusy = streaming || uploadingAttachments;
 
   return (
     <div className="flex flex-col h-full">
@@ -592,9 +620,28 @@ export default function ChatPage() {
       {/* Input */}
       <div className="border-t border-border px-5 py-3">
         <div className="max-w-3xl mx-auto">
+          {pendingFiles.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-2">
+              {pendingFiles.map((file, index) => (
+                <div
+                  key={`${file.name}-${file.size}-${index}`}
+                  className="inline-flex items-center gap-2 rounded-full border border-border bg-bg-secondary px-3 py-1 text-xs text-text-secondary"
+                >
+                  <span className="max-w-[220px] truncate">{file.name}</span>
+                  <button
+                    onClick={() => removePendingFile(index)}
+                    disabled={isComposerBusy}
+                    className="text-text-tertiary hover:text-text-primary"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           <div
             className={`flex items-center gap-2 bg-bg-secondary border border-border rounded-xl px-3.5 py-2.5 transition ${
-              streaming ? "opacity-50" : ""
+              isComposerBusy ? "opacity-50" : ""
             }`}
           >
             <input
@@ -606,7 +653,7 @@ export default function ChatPage() {
             />
             <button
               onClick={() => fileInputRef.current?.click()}
-              disabled={streaming}
+              disabled={isComposerBusy}
               className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 bg-accent-muted text-accent hover:bg-accent/20 transition"
               aria-label="Attach file"
             >
@@ -628,14 +675,14 @@ export default function ChatPage() {
                   : "Paste a job URL, company + role, or ask to tailor your documents..."
               }
               rows={1}
-              disabled={streaming}
+              disabled={isComposerBusy}
               className="flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-tertiary resize-none outline-none max-h-40"
             />
             <button
-              onClick={sendMessage}
-              disabled={streaming || !input.trim()}
+              onClick={() => void sendMessage()}
+              disabled={isComposerBusy || (!input.trim() && pendingFiles.length === 0)}
               className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 transition ${
-                input.trim() && !streaming
+                (input.trim() || pendingFiles.length > 0) && !isComposerBusy
                   ? "bg-accent text-white"
                   : "bg-bg-tertiary text-text-tertiary"
               }`}
