@@ -8,6 +8,8 @@ from typing import Any
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
 
 
@@ -21,6 +23,7 @@ SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[.!?])\s+")
 class ThemeSpec:
     theme_id: str
     density: str
+    ats_profile: str
     body_font: str
     body_size_pt: float
     body_color: tuple[int, int, int]
@@ -43,6 +46,12 @@ class ThemeSpec:
     max_bullets_per_experience: int
     summary_target_chars: int
     skills_target_chars: int
+    resume_header_alignment: str = "center"
+    cover_letter_date_alignment: str = "left"
+    heading_case: str = "title"
+    title_italic: bool = False
+    header_divider: bool = False
+    divider_color: tuple[int, int, int] = (200, 200, 200)
 
 
 @dataclass
@@ -78,6 +87,7 @@ THEMES: dict[str, ThemeSpec] = {
     "classic_professional": ThemeSpec(
         theme_id="classic_professional",
         density="balanced",
+        ats_profile="safe",
         body_font="Calibri",
         body_size_pt=11.0,
         body_color=(0, 0, 0),
@@ -100,10 +110,15 @@ THEMES: dict[str, ThemeSpec] = {
         max_bullets_per_experience=2,
         summary_target_chars=320,
         skills_target_chars=220,
+        resume_header_alignment="center",
+        cover_letter_date_alignment="left",
+        heading_case="title",
+        title_italic=False,
     ),
     "technical_compact": ThemeSpec(
         theme_id="technical_compact",
         density="compact",
+        ats_profile="safe",
         body_font="Calibri",
         body_size_pt=10.5,
         body_color=(15, 15, 15),
@@ -126,12 +141,116 @@ THEMES: dict[str, ThemeSpec] = {
         max_bullets_per_experience=2,
         summary_target_chars=260,
         skills_target_chars=260,
+        resume_header_alignment="center",
+        cover_letter_date_alignment="left",
+        heading_case="title",
+        title_italic=False,
+    ),
+    "executive_clean": ThemeSpec(
+        theme_id="executive_clean",
+        density="balanced",
+        ats_profile="safe",
+        body_font="Cambria",
+        body_size_pt=10.8,
+        body_color=(26, 31, 36),
+        heading_font="Cambria",
+        heading_size_pt=11.0,
+        heading_color=(52, 73, 94),
+        name_size_pt=24.0,
+        title_size_pt=11.5,
+        title_color=(88, 95, 104),
+        top_margin_in=0.85,
+        right_margin_in=1.0,
+        bottom_margin_in=0.8,
+        left_margin_in=1.0,
+        line_spacing=1.04,
+        paragraph_after_pt=4.0,
+        section_before_pt=12.0,
+        section_after_pt=4.0,
+        bullet_indent_in=0.22,
+        max_resume_experiences=3,
+        max_bullets_per_experience=2,
+        summary_target_chars=290,
+        skills_target_chars=200,
+        resume_header_alignment="left",
+        cover_letter_date_alignment="right",
+        heading_case="upper",
+        title_italic=True,
+    ),
+    "ats_minimal": ThemeSpec(
+        theme_id="ats_minimal",
+        density="balanced",
+        ats_profile="strict",
+        body_font="Arial",
+        body_size_pt=11.0,
+        body_color=(0, 0, 0),
+        heading_font="Arial",
+        heading_size_pt=11.0,
+        heading_color=(0, 0, 0),
+        name_size_pt=20.0,
+        title_size_pt=11.0,
+        title_color=(32, 32, 32),
+        top_margin_in=0.8,
+        right_margin_in=0.95,
+        bottom_margin_in=0.8,
+        left_margin_in=0.95,
+        line_spacing=1.0,
+        paragraph_after_pt=3.0,
+        section_before_pt=8.0,
+        section_after_pt=3.0,
+        bullet_indent_in=0.2,
+        max_resume_experiences=3,
+        max_bullets_per_experience=2,
+        summary_target_chars=260,
+        skills_target_chars=210,
+        resume_header_alignment="left",
+        cover_letter_date_alignment="left",
+        heading_case="title",
+        title_italic=False,
+    ),
+    "modern_minimal": ThemeSpec(
+        theme_id="modern_minimal",
+        density="balanced",
+        ats_profile="safe",
+        body_font="Calibri",
+        body_size_pt=10.8,
+        body_color=(24, 30, 36),
+        heading_font="Calibri",
+        heading_size_pt=11.5,
+        heading_color=(36, 92, 128),
+        name_size_pt=22.5,
+        title_size_pt=11.0,
+        title_color=(84, 96, 108),
+        top_margin_in=0.82,
+        right_margin_in=0.95,
+        bottom_margin_in=0.78,
+        left_margin_in=0.95,
+        line_spacing=1.03,
+        paragraph_after_pt=3.0,
+        section_before_pt=11.0,
+        section_after_pt=4.0,
+        bullet_indent_in=0.2,
+        max_resume_experiences=3,
+        max_bullets_per_experience=2,
+        summary_target_chars=280,
+        skills_target_chars=220,
+        resume_header_alignment="left",
+        cover_letter_date_alignment="right",
+        heading_case="title",
+        title_italic=False,
+        header_divider=True,
+        divider_color=(36, 92, 128),
     ),
 }
 
 
 def _clean_whitespace(text: str) -> str:
     return re.sub(r"\s+", " ", str(text or "")).strip()
+
+
+def _contains_phrase(text: str, phrase: str) -> bool:
+    pattern = r"\b" + r"\s+".join(re.escape(part) for part in phrase.split()) + r"\b"
+    return re.search(pattern, text) is not None
 
 
 def _list_to_text(value) -> str:
@@ -218,6 +337,96 @@ def _normalize_cover_letter_paragraphs(paragraphs) -> list[str]:
         total_chars = sum(len(paragraph) for paragraph in normalized)
 
     return [paragraph for paragraph in normalized if paragraph]
+
+
+def _has_leadership_signal(normalized_sections: dict) -> bool:
+    leadership_markers = (
+        "staff",
+        "principal",
+        "lead",
+        "director",
+        "manager",
+        "head of",
+        "leadership",
+        "mentored",
+        "mentoring",
+        "strategy",
+    )
+    text_parts = [
+        normalized_sections.get("title", ""),
+        normalized_sections.get("summary", ""),
+        normalized_sections.get("role", ""),
+    ]
+    for experience in normalized_sections.get("experiences", []):
+        if not isinstance(experience, dict):
+            continue
+        text_parts.append(str(experience.get("role", "")))
+        text_parts.extend(str(bullet) for bullet in experience.get("bullets", []))
+    combined = " ".join(_clean_whitespace(part).lower() for part in text_parts if part)
+    return any(_contains_phrase(combined, marker) for marker in leadership_markers)
+
+
+def _has_ats_simplicity_signal(normalized_sections: dict) -> bool:
+    ats_markers = (
+        "analyst",
+        "accountant",
+        "coordinator",
+        "administrator",
+        "specialist",
+        "operations",
+        "compliance",
+        "government",
+        "public sector",
+        "healthcare",
+        "support",
+        "customer service",
+        "case manager",
+    )
+    text_parts = [
+        normalized_sections.get("title", ""),
+        normalized_sections.get("summary", ""),
+        normalized_sections.get("role", ""),
+        normalized_sections.get("company", ""),
+    ]
+    combined = " ".join(_clean_whitespace(part).lower() for part in text_parts if part)
+    return any(_contains_phrase(combined, marker) for marker in ats_markers)
+
+
+def _has_design_signal(normalized_sections: dict) -> bool:
+    design_markers = (
+        "designer",
+        "design",
+        "ux",
+        "ui",
+        "product design",
+        "brand",
+        "visual",
+        "creative",
+        "art director",
+        "interaction",
+        "service design",
+        "motion",
+    )
+    text_parts = [
+        normalized_sections.get("title", ""),
+        normalized_sections.get("summary", ""),
+        normalized_sections.get("role", ""),
+        normalized_sections.get("company", ""),
+    ]
+    for experience in normalized_sections.get("experiences", []):
+        if not isinstance(experience, dict):
+            continue
+        text_parts.append(str(experience.get("role", "")))
+        text_parts.extend(str(bullet) for bullet in experience.get("bullets", []))
+    combined = " ".join(_clean_whitespace(part).lower() for part in text_parts if part)
+    return any(_contains_phrase(combined, marker) for marker in design_markers)
+
+
+def _requested_layout_strategy(normalized_sections: dict) -> str | None:
+    strategy = str(normalized_sections.get("layout_strategy", "")).strip().lower()
+    if strategy in {"ats_safe", "balanced", "executive", "compact", "creative_safe"}:
+        return strategy
+    return None
 
 
 def _fit_cover_letter_paragraphs(
@@ -355,6 +564,7 @@ def normalize_document_sections(doc_type: str, sections: dict) -> dict:
         normalized["education"] = _format_education_entries(normalized.get("education"))
         normalized["experiences"] = _normalize_resume_experiences(normalized.get("experiences"))
         normalized["theme_id"] = _list_to_text(normalized.get("theme_id") or normalized.get("theme"))
+        normalized["layout_strategy"] = _list_to_text(normalized.get("layout_strategy"))
         return normalized
 
     if doc_type == "cover_letter":
@@ -365,6 +575,7 @@ def normalize_document_sections(doc_type: str, sections: dict) -> dict:
         normalized["role"] = _list_to_text(normalized.get("role"))
         normalized["paragraphs"] = _normalize_cover_letter_paragraphs(normalized.get("paragraphs"))
         normalized["theme_id"] = _list_to_text(normalized.get("theme_id") or normalized.get("theme"))
+        normalized["layout_strategy"] = _list_to_text(normalized.get("layout_strategy"))
         return normalized
 
     return normalized
@@ -375,9 +586,32 @@ def _choose_theme(doc_type: str, normalized_sections: dict) -> ThemeSpec:
     if requested in THEMES:
         return THEMES[requested]
 
+    requested_strategy = _requested_layout_strategy(normalized_sections)
+    has_leadership_signal = _has_leadership_signal(normalized_sections)
+    has_ats_signal = _has_ats_simplicity_signal(normalized_sections)
+    has_design_signal = _has_design_signal(normalized_sections)
+
     if doc_type == "cover_letter":
         total_chars = sum(len(paragraph) for paragraph in normalized_sections.get("paragraphs", []))
-        return THEMES["technical_compact"] if total_chars > 780 else THEMES["classic_professional"]
+        if requested_strategy == "compact":
+            return THEMES["technical_compact"]
+        if requested_strategy == "executive":
+            return THEMES["executive_clean"]
+        if requested_strategy == "balanced":
+            return THEMES["classic_professional"]
+        if requested_strategy == "ats_safe":
+            return THEMES["technical_compact"] if total_chars > 780 else THEMES["ats_minimal"]
+        if requested_strategy == "creative_safe":
+            return THEMES["technical_compact"] if total_chars > 780 else THEMES["modern_minimal"]
+        if total_chars > 780:
+            return THEMES["technical_compact"]
+        if has_ats_signal:
+            return THEMES["ats_minimal"]
+        if has_leadership_signal:
+            return THEMES["executive_clean"]
+        if has_design_signal:
+            return THEMES["modern_minimal"]
+        return THEMES["classic_professional"]
 
     experiences = normalized_sections.get("experiences", [])
     bullet_count = sum(len(item.get("bullets", [])) for item in experiences if isinstance(item, dict))
@@ -387,6 +621,28 @@ def _choose_theme(doc_type: str, normalized_sections: dict) -> ThemeSpec:
         + len(experiences) * 2
         + bullet_count
     )
+    if requested_strategy == "compact":
+        return THEMES["technical_compact"]
+    if requested_strategy == "executive":
+        return THEMES["executive_clean"]
+    if requested_strategy == "balanced":
+        return THEMES["classic_professional"]
+    if requested_strategy == "ats_safe":
+        if density_score >= 12:
+            return THEMES["technical_compact"]
+        return THEMES["ats_minimal"]
+    if requested_strategy == "creative_safe":
+        if density_score >= 12:
+            return THEMES["technical_compact"]
+        return THEMES["modern_minimal"]
+    if density_score >= 12:
+        return THEMES["technical_compact"]
+    if has_ats_signal:
+        return THEMES["ats_minimal"]
+    if has_leadership_signal:
+        return THEMES["executive_clean"]
+    if has_design_signal:
+        return THEMES["modern_minimal"]
     if density_score >= 10:
         return THEMES["technical_compact"]
     return THEMES["classic_professional"]
@@ -561,7 +817,7 @@ def _next_repair_action(
     theme: ThemeSpec,
     repair_level: int,
 ) -> tuple[RepairAction | None, str | None, int]:
-    if theme.theme_id != "technical_compact":
+    if theme.density != "compact":
         return (
             RepairAction(
                 action="switch_theme",
@@ -758,12 +1014,38 @@ def _apply_theme(document: Document, theme: ThemeSpec):
     style.paragraph_format.space_after = Pt(theme.paragraph_after_pt)
 
 
+def _set_paragraph_bottom_border(paragraph, color: tuple[int, int, int], size: int = 8, space: int = 1):
+    paragraph_properties = paragraph._p.get_or_add_pPr()
+    borders = paragraph_properties.find(qn("w:pBdr"))
+    if borders is None:
+        borders = OxmlElement("w:pBdr")
+        paragraph_properties.append(borders)
+    bottom = borders.find(qn("w:bottom"))
+    if bottom is None:
+        bottom = OxmlElement("w:bottom")
+        borders.append(bottom)
+    bottom.set(qn("w:val"), "single")
+    bottom.set(qn("w:sz"), str(size))
+    bottom.set(qn("w:space"), str(space))
+    bottom.set(qn("w:color"), "".join(f"{component:02X}" for component in color))
+
+
+def _add_header_divider(document: Document, theme: ThemeSpec):
+    if not theme.header_divider:
+        return
+    divider = document.add_paragraph()
+    divider.paragraph_format.space_before = Pt(1)
+    divider.paragraph_format.space_after = Pt(theme.section_before_pt - 2)
+    _set_paragraph_bottom_border(divider, theme.divider_color)
+
+
 def _add_section_heading(document: Document, text: str, theme: ThemeSpec):
     paragraph = document.add_paragraph()
     paragraph.paragraph_format.space_before = Pt(theme.section_before_pt)
     paragraph.paragraph_format.space_after = Pt(theme.section_after_pt)
     paragraph.paragraph_format.keep_with_next = True
-    run = paragraph.add_run(text)
+    heading_text = text.upper() if theme.heading_case == "upper" else text
+    run = paragraph.add_run(heading_text)
     run.bold = True
     run.font.name = theme.heading_font
     run.font.size = Pt(theme.heading_size_pt)
@@ -792,21 +1074,28 @@ def _render_resume(plan: DocumentPlan) -> bytes:
     _apply_theme(document, theme)
 
     header = document.add_paragraph()
-    header.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    header.alignment = (
+        WD_ALIGN_PARAGRAPH.CENTER
+        if theme.resume_header_alignment == "center"
+        else WD_ALIGN_PARAGRAPH.LEFT
+    )
     header.paragraph_format.space_after = Pt(4)
     header.paragraph_format.keep_with_next = True
     name_run = header.add_run(sections.get("name", ""))
     name_run.bold = True
     name_run.font.name = theme.heading_font
     name_run.font.size = Pt(theme.name_size_pt)
+    name_run.font.color.rgb = RGBColor(*theme.heading_color)
 
     title = document.add_paragraph()
-    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    title.alignment = header.alignment
     title.paragraph_format.space_after = Pt(theme.section_before_pt)
     title_run = title.add_run(sections.get("title", ""))
     title_run.font.name = theme.body_font
     title_run.font.size = Pt(theme.title_size_pt)
     title_run.font.color.rgb = RGBColor(*theme.title_color)
+    title_run.italic = theme.title_italic
+    _add_header_divider(document, theme)
 
     if sections.get("summary"):
         _add_section_heading(document, "Summary", theme)
@@ -860,7 +1149,12 @@ def _render_cover_letter(plan: DocumentPlan) -> bytes:
     document = Document()
     _apply_theme(document, theme)
 
-    _add_body_paragraph(document, sections.get("date", ""), theme)
+    date_paragraph = _add_body_paragraph(document, sections.get("date", ""), theme)
+    date_paragraph.alignment = (
+        WD_ALIGN_PARAGRAPH.RIGHT
+        if theme.cover_letter_date_alignment == "right"
+        else WD_ALIGN_PARAGRAPH.LEFT
+    )
 
     recipient_lines = [line for line in [sections.get("hiring_manager", ""), sections.get("company", "")] if line]
     for index, line_text in enumerate(recipient_lines):
@@ -880,6 +1174,8 @@ def _render_cover_letter(plan: DocumentPlan) -> bytes:
     subject_run.bold = True
     subject_run.font.name = theme.body_font
     subject_run.font.size = Pt(theme.body_size_pt)
+    if theme.header_divider:
+        _add_header_divider(document, theme)
 
     for paragraph_text in sections.get("paragraphs", []):
         _add_body_paragraph(document, paragraph_text, theme)

@@ -24,7 +24,8 @@ cp backend/.env.example backend/.env
 | `GEMINI_API_KEY` | https://aistudio.google.com/apikey |
 | `TAVILY_API_KEY` | https://app.tavily.com |
 | `FIRECRAWL_API_KEY` | https://www.firecrawl.dev |
-| `FRONTEND_URL` | `http://localhost:3000` (local) or your Vercel URL |
+| `FRONTEND_URL` | Primary frontend URL, e.g. `http://localhost:3000` locally or your main Vercel URL |
+| `FRONTEND_URLS` | Optional comma-separated extra frontend origins to allow, e.g. a second Vercel URL |
 
 ### Frontend (`frontend/.env.local`)
 
@@ -211,6 +212,24 @@ This is the workflow to use when adding:
 - new spacing variants
 - denser or more complex layout behavior
 
+## Job Search and Scrape Diagnostics
+
+Use the live-provider probe to inspect what the current job-ingestion engine is doing:
+
+```bash
+cd backend
+.venv/bin/python ../scripts/probe_job_ingestion.py
+.venv/bin/python ../scripts/probe_job_ingestion.py --query "product designer" --location remote
+.venv/bin/python ../scripts/probe_job_ingestion.py --url "https://jobs.lever.co/inkitt/3d466a0d-1de6-40c6-ade9-9aec2b14c71e"
+.venv/bin/python ../scripts/probe_job_ingestion.py --json
+```
+
+What this probe reports:
+- search result classification (`platform`, `url_kind`, `canonical_candidate`)
+- whether the engine is finding direct ATS/company job pages or broad listing pages
+- scrape blockers such as non-specific job pages, upstream HTTP errors, access walls, and Workday-specific failures
+- a real end-to-end scrape of the first canonical search result when one is found
+
 ## Team Access Gate
 
 The shared team-access code is stored in Supabase and is separate from Supabase Auth.
@@ -232,14 +251,14 @@ See [DEPLOY_TEAM_TEST.md](/Users/aham/projects/dev/resumeAndCoverLetterAutomatio
 | GET | `/conversations` | Yes | List your conversations |
 | GET | `/conversations/{id}` | Yes | Get conversation with messages |
 | POST | `/conversations/{id}/messages` | Yes | Send message, get SSE stream |
-| GET | `/documents/{id}/download` | Yes | Get signed download URL |
+| GET | `/documents/{id}/download` | Yes | Download the `.docx` file directly |
 
 **Auth:** Pass `Authorization: Bearer <supabase-jwt>` header.
 
 **SSE Events** from `/conversations/{id}/messages`:
 - `event: message` — AI text chunk `{"content": "..."}`
 - `event: status` — Tool status `{"tool": "search_jobs", "state": "running"|"done"}`
-- `event: document` — Doc ready `{"document_id": "...", "doc_type": "...", "download_url": "..."}`
+- `event: document` — Doc ready `{"document_id": "...", "doc_type": "...", "filename": "...", "download_url": "..."}`
 - `event: error` — Error `{"message": "..."}`
 
 ---

@@ -1,11 +1,14 @@
 import logging
 import tempfile
 import os
+import uuid
 from datetime import datetime, timezone
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
 from config import settings
+from document_filenames import default_generated_document_filename
+import tools
 from auth import (
     TEAM_ACCESS_BLOCKED_DETAIL,
     TEAM_ACCESS_UNCONFIGURED_DETAIL,
@@ -38,11 +41,12 @@ logging.basicConfig(
 
 logger = logging.getLogger("api")
 app = FastAPI(title="Resume & Cover Letter AI", version="0.1.0")
+DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.frontend_url, "http://localhost:3000"],
+    allow_origins=settings.allowed_frontend_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -55,6 +59,40 @@ ALLOWED_MIME_TYPES = {
     "image/jpeg",
 }
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+
+
+def _stored_or_default_document_filename(filename: str | None, doc_type: str, created_at: str | None = None) -> str:
+    if filename:
+        return filename
+    parsed_created_at = None
+    if created_at:
+        try:
+            parsed_created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        except ValueError:
+            parsed_created_at = None
+    return default_generated_document_filename(doc_type, parsed_created_at)
+
+
+def _document_response_payload(doc: dict) -> dict:
+    signed = supabase.storage.from_("documents").create_signed_url(
+        doc["file_url"], 3600
+    )
+    return {
+        "document_id": doc["id"],
+        "doc_type": doc["doc_type"],
+        "created_at": doc.get("created_at"),
+        "filename": _stored_or_default_document_filename(
+            doc.get("filename"),
+            doc["doc_type"],
+            doc.get("created_at"),
+        ),
+        "download_url": signed.get("signedURL", ""),
+        "theme_id": doc.get("theme_id"),
+        "variant_key": doc.get("variant_key"),
+        "variant_label": doc.get("variant_label"),
+        "variant_group_id": doc.get("variant_group_id"),
+        "can_regenerate": bool(doc.get("source_sections")),
+    }
 
 
 @app.get("/health")
@@ -155,21 +193,28 @@ async def get_profile(user_id: str = Depends(get_current_user)):
     # Generated documents
     docs = (
         supabase.table("generated_documents")
-        .select("id, job_id, doc_type, file_url, created_at")
+        .select("id, job_id, doc_type, filename, file_url, created_at, theme_id, variant_key, variant_label, variant_group_id, source_sections, superseded_at")
         .eq("user_id", user_id)
         .order("created_at", desc=True)
         .execute()
     )
     docs_with_urls = []
     for d in docs.data:
+        if d.get("superseded_at"):
+            continue
         try:
-            signed = supabase.storage.from_("documents").create_signed_url(
-                d["file_url"], 3600
-            )
-            d["download_url"] = signed.get("signedURL", "")
+            docs_with_urls.append(_document_response_payload(d))
         except Exception:
-            d["download_url"] = ""
-        docs_with_urls.append(d)
+            fallback = dict(d)
+            fallback["download_url"] = ""
+            fallback["filename"] = _stored_or_default_document_filename(
+                d.get("filename"),
+                d["doc_type"],
+                d.get("created_at"),
+            )
+            fallback["document_id"] = fallback.pop("id")
+            fallback["can_regenerate"] = bool(d.get("source_sections"))
+            docs_with_urls.append(fallback)
 
     return {
         "profile": profile.data,
@@ -323,19 +368,15 @@ async def get_conversation(
         for job_id in job_ids:
             doc_results = (
                 supabase.table("generated_documents")
-                .select("id, doc_type, file_url")
+                .select("id, doc_type, filename, file_url, created_at, theme_id, variant_key, variant_label, variant_group_id, source_sections, superseded_at")
                 .eq("job_id", job_id)
+                .order("created_at")
                 .execute()
             )
             for doc in doc_results.data:
-                signed = supabase.storage.from_("documents").create_signed_url(
-                    doc["file_url"], 3600
-                )
-                docs.append({
-                    "document_id": doc["id"],
-                    "doc_type": doc["doc_type"],
-                    "download_url": signed.get("signedURL", ""),
-                })
+                if doc.get("superseded_at"):
+                    continue
+                docs.append(_document_response_payload(doc))
 
     return {**conv.data, "messages": messages.data, "documents": docs}
 
@@ -497,7 +538,7 @@ async def upload_file(
     logger.info("upload size=%d bytes, uploading to storage...", len(file_bytes))
 
     # Upload to Supabase Storage
-    storage_path = f"{user_id}/{conversation_id}/{file.filename}"
+    storage_path = f"{user_id}/{conversation_id}/{uuid.uuid4()}-{file.filename}"
     try:
         supabase.storage.from_("uploads").upload(
             storage_path,
@@ -557,7 +598,7 @@ async def download_document(
 ):
     doc = (
         supabase.table("generated_documents")
-        .select("*")
+        .select("id, doc_type, filename, file_url, created_at")
         .eq("id", document_id)
         .eq("user_id", user_id)
         .maybe_single()
@@ -566,10 +607,96 @@ async def download_document(
     if not doc.data:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    signed = supabase.storage.from_("documents").create_signed_url(
-        doc.data["file_url"], 3600
+    try:
+        payload = supabase.storage.from_("documents").download(doc.data["file_url"])
+    except Exception as error:
+        logger.error("Failed to download document %s: %s", document_id[:8], error)
+        raise HTTPException(status_code=500, detail="Failed to download document")
+
+    file_bytes = payload.read() if hasattr(payload, "read") else payload
+    filename = _stored_or_default_document_filename(
+        doc.data.get("filename"),
+        doc.data["doc_type"],
+        doc.data.get("created_at"),
     )
-    return {"download_url": signed.get("signedURL", "")}
+    return Response(
+        content=file_bytes,
+        media_type=DOCX_MIME_TYPE,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@app.post("/generated-documents/{document_id}/regenerate")
+async def regenerate_generated_document(
+    document_id: str,
+    user_id: str = Depends(get_current_user),
+):
+    doc = (
+        supabase.table("generated_documents")
+        .select(
+            "id, job_id, doc_type, filename, file_url, created_at, theme_id, "
+            "variant_key, variant_label, variant_group_id, source_sections, "
+            "source_conversation_id, superseded_at"
+        )
+        .eq("id", document_id)
+        .eq("user_id", user_id)
+        .maybe_single()
+        .execute()
+    )
+    if not doc.data:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if doc.data.get("superseded_at"):
+        raise HTTPException(status_code=409, detail="Document has already been superseded")
+
+    source_sections = doc.data.get("source_sections")
+    if not isinstance(source_sections, dict) or not source_sections:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "This document cannot be regenerated because its source data was not stored.",
+                "code": "regeneration_unavailable",
+            },
+        )
+
+    result = await tools.generate_document(
+        doc_type=doc.data["doc_type"],
+        sections=source_sections,
+        user_id=user_id,
+        job_id=doc.data["job_id"],
+        conversation_id=doc.data.get("source_conversation_id"),
+        force_variant_key=doc.data.get("variant_key"),
+        variant_group_id=doc.data.get("variant_group_id"),
+    )
+    if "error" in result:
+        raise HTTPException(status_code=500, detail=result["error"])
+
+    new_document_id = result.get("document_id")
+    if new_document_id:
+        supabase.table("generated_documents").update({
+            "superseded_at": datetime.now(timezone.utc).isoformat(),
+            "superseded_by_id": new_document_id,
+        }).eq("id", document_id).execute()
+
+    new_doc = (
+        supabase.table("generated_documents")
+        .select(
+            "id, doc_type, filename, file_url, created_at, theme_id, "
+            "variant_key, variant_label, variant_group_id, source_sections"
+        )
+        .eq("id", new_document_id)
+        .maybe_single()
+        .execute()
+    )
+    if not new_doc.data:
+        raise HTTPException(status_code=500, detail="Regenerated document was not saved")
+
+    return {
+        "replaced_document_id": document_id,
+        "document": _document_response_payload(new_doc.data),
+    }
 
 
 # ── Individual File & Document Deletes ───────────────────────────────

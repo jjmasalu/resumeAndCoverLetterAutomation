@@ -1,0 +1,33 @@
+{
+  "id": "cover_letter_modern_minimal_balanced",
+  "doc_type": "cover_letter",
+  "input": {
+    "name": "Jordan Vale",
+    "company": "North Coast",
+    "role": "Product Designer",
+    "layout_strategy": "creative_safe",
+    "paragraphs": [
+      "I am excited to apply for the Product Designer role at North Coast.",
+      "I design thoughtful UX systems, flows, and interaction details for digital products.",
+      "I would bring strong visual clarity, product thinking, and collaboration to the role.",
+      "Thank you for your time and consideration."
+    ]
+  },
+  "expected": {
+    "theme_id": "modern_minimal",
+    "page_budget": 1,
+    "verification_status": "passed",
+    "attempt_count": 1,
+    "repair_actions": [],
+    "layout_metrics": {
+      "paragraph_count": 4
+    },
+    "required_text": [
+      "Hiring Manager",
+      "North Coast",
+      "Re: Product Designer",
+      "Sincerely,",
+      "Jordan Vale"
+    ]
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "id": "resume_modern_minimal_balanced",
+  "doc_type": "resume",
+  "input": {
+    "name": "Jordan Vale",
+    "title": "Product Designer",
+    "summary": "Product designer focused on UX systems, interaction design, accessibility, and clear product storytelling across web and mobile surfaces.",
+    "skills": {
+      "Design": ["Figma", "Prototyping", "Design systems"],
+      "Product": ["UX research", "Interaction design", "Accessibility"]
+    },
+    "education": [
+      {
+        "degree": "BDes Interaction Design",
+        "institution": "NSCAD University",
+        "dates": "2016-2020"
+      }
+    ],
+    "experiences": [
+      {
+        "company": "North Coast",
+        "role": "Senior Product Designer",
+        "dates": "2022 to Present",
+        "bullets": [
+          "Led UX design for core product flows and design system work.",
+          "Partnered with product and engineering on interaction details for shipped features."
+        ]
+      },
+      {
+        "company": "Harbour Studio",
+        "role": "Product Designer",
+        "dates": "2020 to 2022",
+        "bullets": [
+          "Designed web and mobile flows for client product teams.",
+          "Improved onboarding clarity and accessibility across core journeys."
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "theme_id": "modern_minimal",
+    "page_budget": 1,
+    "verification_status": "passed",
+    "attempt_count": 1,
+    "repair_actions": [],
+    "layout_metrics": {
+      "experience_count": 2,
+      "bullet_count": 4
+    },
+    "required_text": [
+      "Jordan Vale",
+      "Product Designer",
+      "Summary",
+      "Experience",
+      "Skills",
+      "Education",
+      "North Coast"
+    ]
+  }
+}

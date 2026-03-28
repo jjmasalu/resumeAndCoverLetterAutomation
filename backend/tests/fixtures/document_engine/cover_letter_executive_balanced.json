@@ -1,0 +1,32 @@
+{
+  "id": "cover_letter_executive_balanced",
+  "doc_type": "cover_letter",
+  "input": {
+    "name": "Morgan Lee",
+    "company": "Northstar Systems",
+    "role": "Staff Platform Engineer",
+    "paragraphs": [
+      "I am excited to apply for the Staff Platform Engineer role at Northstar Systems.",
+      "I have led platform reliability programs, backend strategy, and mentoring efforts across distributed systems teams.",
+      "I would bring strong technical leadership, operational judgment, and hands-on systems experience to the role.",
+      "Thank you for your time and consideration."
+    ]
+  },
+  "expected": {
+    "theme_id": "executive_clean",
+    "page_budget": 1,
+    "verification_status": "passed",
+    "attempt_count": 1,
+    "repair_actions": [],
+    "layout_metrics": {
+      "paragraph_count": 4
+    },
+    "required_text": [
+      "Hiring Manager",
+      "Northstar Systems",
+      "Re: Staff Platform Engineer",
+      "Sincerely,",
+      "Morgan Lee"
+    ]
+  }
+}

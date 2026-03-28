@@ -1,70 +1,64 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
-
-const ACCEPTED_TYPES = [
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "image/png",
-  "image/jpeg",
-];
-const ACCEPTED_EXTENSIONS = ".pdf,.docx,.png,.jpg,.jpeg";
-const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+import {
+  ATTACHMENT_ACCEPTED_EXTENSIONS_ATTR,
+  validateAttachmentFiles,
+} from "@/lib/attachment-validation";
 
 interface FileUploadProps {
-  onFileSelect: (file: File) => void;
-  uploading?: boolean;
-  uploadedFilename?: string | null;
+  onFilesSelect: (files: File[]) => void;
+  selecting?: boolean;
+  selectedFilename?: string | null;
+  statusLabel?: string;
 }
 
-export default function FileUpload({ onFileSelect, uploading, uploadedFilename }: FileUploadProps) {
+export default function FileUpload({
+  onFilesSelect,
+  selecting,
+  selectedFilename,
+  statusLabel = "Ready to send",
+}: FileUploadProps) {
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const validate = useCallback((file: File): string | null => {
-    if (!ACCEPTED_TYPES.includes(file.type)) {
-      return "Supported formats: PDF, DOCX, PNG, JPG";
-    }
-    if (file.size > MAX_SIZE) {
-      return "File must be under 10MB";
-    }
-    return null;
-  }, []);
-
   const handleFile = useCallback(
-    (file: File) => {
+    (files: File[]) => {
       setError(null);
-      const err = validate(file);
-      if (err) {
-        setError(err);
+      const { accepted, errorMessage } = validateAttachmentFiles(files);
+      if (errorMessage) {
+        setError(errorMessage);
+      }
+      if (accepted.length === 0) {
         return;
       }
-      onFileSelect(file);
+      onFilesSelect(accepted);
     },
-    [validate, onFileSelect]
+    [onFilesSelect]
   );
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
       setDragOver(false);
-      const file = e.dataTransfer.files[0];
-      if (file) handleFile(file);
+      const files = Array.from(e.dataTransfer.files || []);
+      if (files.length > 0) handleFile(files);
     },
     [handleFile]
   );
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) handleFile(file);
+      const files = Array.from(e.target.files || []);
+      if (files.length > 0) handleFile(files);
+      e.target.value = "";
     },
     [handleFile]
   );
 
   // Uploaded state
-  if (uploadedFilename) {
+  if (selectedFilename) {
     return (
       <div className="w-full max-w-xs border border-border rounded-xl px-4 py-3 flex items-center gap-3">
         <div className="w-8 h-8 rounded-lg bg-accent-muted flex items-center justify-center flex-shrink-0">
@@ -73,8 +67,8 @@ export default function FileUpload({ onFileSelect, uploading, uploadedFilename }
           </svg>
         </div>
         <div className="min-w-0">
-          <div className="text-xs text-text-primary truncate">{uploadedFilename}</div>
-          <div className="text-[10px] text-text-tertiary">Uploaded</div>
+          <div className="text-xs text-text-primary truncate">{selectedFilename}</div>
+          <div className="text-[10px] text-text-tertiary">{statusLabel}</div>
         </div>
       </div>
     );
@@ -98,15 +92,16 @@ export default function FileUpload({ onFileSelect, uploading, uploadedFilename }
         <input
           ref={inputRef}
           type="file"
-          accept={ACCEPTED_EXTENSIONS}
+          multiple
+          accept={ATTACHMENT_ACCEPTED_EXTENSIONS_ATTR}
           onChange={handleChange}
           className="hidden"
         />
 
-        {uploading ? (
+        {selecting ? (
           <>
             <div className="w-5 h-5 border-2 border-accent border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-            <div className="text-xs text-text-secondary">Uploading...</div>
+            <div className="text-xs text-text-secondary">Preparing...</div>
           </>
         ) : (
           <>

@@ -1,6 +1,7 @@
 import io
 
 from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 import document_engine
 
@@ -53,6 +54,115 @@ def test_build_document_plan_chooses_compact_theme_for_dense_resume():
     assert plan.verification["status"] == "passed"
     assert plan.layout_metrics["experience_count"] <= 4
     assert plan.layout_metrics["bullet_count"] <= 8
+
+
+def test_build_document_plan_chooses_executive_theme_for_leadership_resume():
+    plan = document_engine.build_document_plan(
+        "resume",
+        {
+            "name": "Morgan Lee",
+            "title": "Staff Platform Engineer",
+            "summary": (
+                "Staff platform engineer with experience leading reliability programs, "
+                "mentoring engineers, and shaping backend platform strategy."
+            ),
+            "skills": {
+                "Languages": ["Python", "Go", "SQL"],
+                "Cloud": ["AWS", "GCP"],
+            },
+            "education": "BSc Computer Science",
+            "experiences": [
+                {
+                    "company": "Northstar Systems",
+                    "role": "Staff Platform Engineer",
+                    "dates": "2022 to Present",
+                    "bullets": [
+                        "Led platform reliability initiatives across core services.",
+                        "Mentored backend engineers and drove architecture reviews.",
+                    ],
+                },
+                {
+                    "company": "Atlas Data",
+                    "role": "Senior Backend Engineer",
+                    "dates": "2019 to 2022",
+                    "bullets": [
+                        "Built shared APIs and internal tooling for multiple teams.",
+                        "Improved on-call stability and deployment safety.",
+                    ],
+                },
+            ],
+        },
+    )
+
+    assert plan.theme_id == "executive_clean"
+    assert plan.verification["status"] == "passed"
+    assert plan.repair_history == []
+
+
+def test_build_document_plan_chooses_ats_minimal_for_ats_safe_strategy():
+    plan = document_engine.build_document_plan(
+        "resume",
+        {
+            "name": "Taylor Brooks",
+            "title": "Operations Coordinator",
+            "layout_strategy": "ats_safe",
+            "summary": "Operations coordinator with experience supporting scheduling, compliance, and cross-team administration workflows.",
+            "skills": {
+                "Tools": ["Excel", "Google Workspace", "CRM"],
+                "Strengths": ["Scheduling", "Documentation", "Reporting"],
+            },
+            "education": "Diploma in Business Administration",
+            "experiences": [
+                {
+                    "company": "Northview Health",
+                    "role": "Operations Coordinator",
+                    "dates": "2022 to Present",
+                    "bullets": [
+                        "Coordinated scheduling and documentation across multiple teams.",
+                        "Maintained compliance records and reporting workflows.",
+                    ],
+                }
+            ],
+        },
+    )
+
+    assert plan.theme_id == "ats_minimal"
+    assert plan.verification["status"] == "passed"
+    assert plan.repair_history == []
+
+
+def test_build_document_plan_chooses_modern_minimal_for_design_role():
+    plan = document_engine.build_document_plan(
+        "resume",
+        {
+            "name": "Jordan Vale",
+            "title": "Product Designer",
+            "summary": (
+                "Product designer focused on UX systems, interaction design, and "
+                "clear product storytelling across web and mobile surfaces."
+            ),
+            "skills": {
+                "Design": ["Figma", "Prototyping", "Design systems"],
+                "Product": ["UX research", "Interaction design", "Accessibility"],
+            },
+            "education": "BDes Interaction Design",
+            "experiences": [
+                {
+                    "company": "North Coast",
+                    "role": "Senior Product Designer",
+                    "dates": "2022 to Present",
+                    "bullets": [
+                        "Led UX design for core product flows and design system work.",
+                        "Partnered with product and engineering on shipped interaction details.",
+                    ],
+                }
+            ],
+        },
+    )
+
+    assert plan.theme_id == "modern_minimal"
+    assert plan.verification["status"] == "passed"
+    assert plan.repair_history == []
 
 
 def test_build_document_plan_repairs_dense_resume_until_within_budget():
@@ -159,3 +269,107 @@ def test_render_document_outputs_expected_cover_letter_structure():
     assert paragraphs[3] == "Re: Backend Engineer"
     assert paragraphs[-2] == "Sincerely,"
     assert paragraphs[-1] == "Avery Carter"
+
+
+def test_render_document_applies_executive_resume_header_alignment():
+    plan = document_engine.build_document_plan(
+        "resume",
+        {
+            "name": "Morgan Lee",
+            "title": "Staff Platform Engineer",
+            "summary": "Led platform strategy, reliability, and mentoring initiatives.",
+            "skills": "Python, Go, AWS",
+            "education": "BSc Computer Science",
+            "experiences": [
+                {
+                    "company": "Northstar Systems",
+                    "role": "Staff Platform Engineer",
+                    "dates": "2022 to Present",
+                    "bullets": ["Led reliability programs.", "Mentored backend engineers."],
+                }
+            ],
+        },
+    )
+
+    rendered = document_engine.render_document(plan)
+    document = Document(io.BytesIO(rendered))
+
+    assert plan.theme_id == "executive_clean"
+    assert document.paragraphs[0].alignment == WD_ALIGN_PARAGRAPH.LEFT
+    assert document.paragraphs[2].text == "SUMMARY"
+
+
+def test_render_document_applies_executive_cover_letter_date_alignment():
+    plan = document_engine.build_document_plan(
+        "cover_letter",
+        {
+            "name": "Morgan Lee",
+            "company": "Northstar Systems",
+            "role": "Staff Platform Engineer",
+            "paragraphs": [
+                "I am excited to apply for the Staff Platform Engineer role at Northstar Systems.",
+                "I have led platform reliability programs and backend strategy across distributed systems teams.",
+                "I would bring strong technical leadership and mentoring experience to the role.",
+                "Thank you for your time and consideration.",
+            ],
+        },
+    )
+
+    rendered = document_engine.render_document(plan)
+    document = Document(io.BytesIO(rendered))
+
+    assert plan.theme_id == "executive_clean"
+    assert document.paragraphs[0].alignment == WD_ALIGN_PARAGRAPH.RIGHT
+
+
+def test_render_document_applies_ats_minimal_header_alignment():
+    plan = document_engine.build_document_plan(
+        "resume",
+        {
+            "name": "Taylor Brooks",
+            "title": "Operations Coordinator",
+            "layout_strategy": "ats_safe",
+            "summary": "Supports operations, scheduling, and documentation workflows.",
+            "skills": "Excel, Reporting, Scheduling",
+            "education": "Diploma in Business Administration",
+            "experiences": [
+                {
+                    "company": "Northview Health",
+                    "role": "Operations Coordinator",
+                    "dates": "2022 to Present",
+                    "bullets": ["Coordinated schedules.", "Maintained compliance records."],
+                }
+            ],
+        },
+    )
+
+    rendered = document_engine.render_document(plan)
+    document = Document(io.BytesIO(rendered))
+
+    assert plan.theme_id == "ats_minimal"
+    assert document.paragraphs[0].alignment == WD_ALIGN_PARAGRAPH.LEFT
+    assert document.paragraphs[2].text == "Summary"
+
+
+def test_render_document_applies_modern_minimal_cover_letter_date_alignment():
+    plan = document_engine.build_document_plan(
+        "cover_letter",
+        {
+            "name": "Jordan Vale",
+            "company": "North Coast",
+            "role": "Product Designer",
+            "layout_strategy": "creative_safe",
+            "paragraphs": [
+                "I am excited to apply for the Product Designer role at North Coast.",
+                "I design thoughtful UX flows, systems, and interaction details for product teams.",
+                "I would bring strong product thinking, visual clarity, and collaboration to the role.",
+                "Thank you for your time and consideration.",
+            ],
+        },
+    )
+
+    rendered = document_engine.render_document(plan)
+    document = Document(io.BytesIO(rendered))
+
+    assert plan.theme_id == "modern_minimal"
+    assert document.paragraphs[0].alignment == WD_ALIGN_PARAGRAPH.RIGHT

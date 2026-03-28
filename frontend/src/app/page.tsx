@@ -1,9 +1,17 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { apiJson, apiUpload } from "@/lib/api";
+import { MODE_COPY } from "@/lib/conversation-modes";
+import {
+  storePendingLandingIntent,
+} from "@/lib/pending-landing-intent";
+import { stashPendingFiles } from "@/lib/pending-files";
+import {
+  ATTACHMENT_ACCEPTED_EXTENSIONS_ATTR,
+  validateAttachmentFiles,
+} from "@/lib/attachment-validation";
 
 const BRAND_NAME = "Resume AI";
 
@@ -13,9 +21,32 @@ export default function LandingPage() {
   const [activeTab, setActiveTab] = useState<Tab>("job_to_resume");
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [stagingFile, setStagingFile] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [sessionChecked, setSessionChecked] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
+
+  useEffect(() => {
+    const supabase = createClient();
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setIsAuthenticated(Boolean(session));
+      setSessionChecked(true);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAuthenticated(Boolean(session));
+      setSessionChecked(true);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
 
   const ensureAuth = async (returnTo?: string): Promise<boolean> => {
     const supabase = createClient();
@@ -32,40 +63,51 @@ export default function LandingPage() {
     if (!input.trim()) return;
     setLoading(true);
     try {
-      if (!(await ensureAuth("/chat"))) return;
-      const conv = await apiJson<{ id: string }>("/conversations", {
-        method: "POST",
-        body: JSON.stringify({ mode: "job_to_resume" }),
-      });
-      const message = `I want to apply for this job: ${input.trim()}`;
-      router.push(`/chat/${conv.id}?initial=${encodeURIComponent(message)}`);
+      storePendingLandingIntent({ kind: "specific_job", input: input.trim() });
+      const returnTo = "/chat?mode=job_to_resume";
+      if (!(await ensureAuth(returnTo))) return;
+      router.push(returnTo);
     } catch {
-      router.push("/login");
+      router.push("/login?returnTo=%2Fchat%3Fmode%3Djob_to_resume");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleFileUpload = async (file: File) => {
-    setUploading(true);
+  const handleFileUpload = async (files: File[]) => {
+    setStagingFile(true);
     try {
-      if (!(await ensureAuth("/chat?mode=find_jobs"))) { setUploading(false); return; }
-      const conv = await apiJson<{ id: string }>("/conversations", {
-        method: "POST",
-        body: JSON.stringify({ mode: "find_jobs" }),
+      if (!(await ensureAuth("/chat?mode=find_jobs"))) {
+        setStagingFile(false);
+        return;
+      }
+      const { accepted, errorMessage } = validateAttachmentFiles(files);
+      if (errorMessage) {
+        setFileError(errorMessage);
+      }
+      if (accepted.length === 0) {
+        setStagingFile(false);
+        return;
+      }
+      setFileError(null);
+      const token = stashPendingFiles(accepted);
+      storePendingLandingIntent({
+        kind: "find_jobs_attachment",
+        token,
+        filename: accepted[0].name,
       });
-      await apiUpload(`/conversations/${conv.id}/upload`, file);
-      router.push(`/chat/${conv.id}?initial=${encodeURIComponent("I've uploaded my resume. Please analyze it and help me find matching jobs.")}`);
+      router.push("/chat?mode=find_jobs");
     } catch {
       router.push("/login");
     } finally {
-      setUploading(false);
+      setStagingFile(false);
     }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) handleFileUpload(file);
+    const files = Array.from(e.target.files || []);
+    if (files.length > 0) handleFileUpload(files);
+    e.target.value = "";
   };
 
   const handleUploadClick = async () => {
@@ -84,13 +126,27 @@ export default function LandingPage() {
         <div className="flex items-center gap-5">
           <a href="#how-it-works" className="text-sm text-text-secondary hover:text-text-primary transition">How it works</a>
           <div className="w-px h-4 bg-border" />
-          <a href="/login" className="text-sm text-text-secondary hover:text-text-primary transition">Sign in</a>
-          <a
-            href="/login"
-            className="px-4 py-1.5 text-sm font-medium text-white bg-accent rounded-md hover:bg-accent-hover transition"
-          >
-            Get Started
-          </a>
+          {sessionChecked && isAuthenticated ? (
+            <>
+              <a href="/history" className="text-sm text-text-secondary hover:text-text-primary transition">History</a>
+              <a
+                href="/chat"
+                className="px-4 py-1.5 text-sm font-medium text-white bg-accent rounded-md hover:bg-accent-hover transition"
+              >
+                Open app
+              </a>
+            </>
+          ) : (
+            <>
+              <a href="/login" className="text-sm text-text-secondary hover:text-text-primary transition">Sign in</a>
+              <a
+                href="/login"
+                className="px-4 py-1.5 text-sm font-medium text-white bg-accent rounded-md hover:bg-accent-hover transition"
+              >
+                Get Started
+              </a>
+            </>
+          )}
         </div>
       </header>
 
@@ -109,7 +165,7 @@ export default function LandingPage() {
           </h1>
 
           <p className="text-base text-text-tertiary max-w-md mx-auto mb-8 leading-relaxed">
-            Two tools. One goal. Get the right job with the right documents.
+            Start from a specific job, or let Resume AI find roles that fit.
           </p>
 
           {/* Tab Switcher */}
@@ -123,7 +179,7 @@ export default function LandingPage() {
                     : "text-text-secondary hover:text-text-primary"
                 }`}
               >
-                I have a job posting
+                {MODE_COPY.job_to_resume.label}
               </button>
               <button
                 onClick={() => setActiveTab("find_jobs")}
@@ -133,13 +189,16 @@ export default function LandingPage() {
                     : "text-text-secondary hover:text-text-primary"
                 }`}
               >
-                Find jobs for me
+                {MODE_COPY.find_jobs.label}
               </button>
             </div>
 
             {/* Tab Content */}
             {activeTab === "job_to_resume" ? (
               <>
+                <p className="mb-3 text-xs text-text-tertiary">
+                  {MODE_COPY.job_to_resume.description}
+                </p>
                 <div className="bg-bg-secondary border border-border rounded-xl p-1.5 flex gap-1.5">
                   <div className="flex-1 flex items-center gap-2 px-3">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-tertiary flex-shrink-0">
@@ -149,7 +208,7 @@ export default function LandingPage() {
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && handleUrlSubmit()}
-                      placeholder="Paste a job posting URL..."
+                      placeholder="Paste a job URL, company + role, or job description..."
                       className="flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-tertiary outline-none py-2"
                     />
                   </div>
@@ -162,15 +221,15 @@ export default function LandingPage() {
                   </button>
                 </div>
                 <div className="flex items-center justify-center gap-4 mt-3 text-[11px] text-text-tertiary">
-                  <span>LinkedIn</span>
-                  <span className="text-border">&middot;</span>
-                  <span>Indeed</span>
+                  <span>Company careers</span>
                   <span className="text-border">&middot;</span>
                   <span>Greenhouse</span>
                   <span className="text-border">&middot;</span>
                   <span>Lever</span>
                   <span className="text-border">&middot;</span>
-                  <span>Any URL</span>
+                  <span>Ashby</span>
+                  <span className="text-border">&middot;</span>
+                  <span>Workday</span>
                 </div>
               </>
             ) : (
@@ -178,7 +237,8 @@ export default function LandingPage() {
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".pdf,.docx,.png,.jpg,.jpeg"
+                  multiple
+                  accept={ATTACHMENT_ACCEPTED_EXTENSIONS_ATTR}
                   onChange={handleFileChange}
                   className="hidden"
                 />
@@ -188,18 +248,18 @@ export default function LandingPage() {
                   onDrop={async (e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    const file = e.dataTransfer.files?.[0];
-                    if (file) {
+                    const files = Array.from(e.dataTransfer.files || []);
+                    if (files.length > 0) {
                       if (!(await ensureAuth("/chat?mode=find_jobs"))) return;
-                      handleFileUpload(file);
+                      handleFileUpload(files);
                     }
                   }}
                   className="bg-bg-secondary border-2 border-dashed border-border rounded-xl p-8 text-center cursor-pointer hover:border-text-tertiary transition"
                 >
-                  {uploading ? (
+                  {stagingFile ? (
                     <>
                       <div className="w-5 h-5 border-2 border-accent border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-                      <div className="text-sm text-text-secondary">Uploading...</div>
+                      <div className="text-sm text-text-secondary">Preparing...</div>
                     </>
                   ) : (
                     <>
@@ -216,7 +276,13 @@ export default function LandingPage() {
                     </>
                   )}
                 </div>
+                {fileError && (
+                  <p className="mt-2 text-xs text-danger">{fileError}</p>
+                )}
                 <div className="mt-3">
+                  <p className="mb-2 text-xs text-text-tertiary">
+                    {MODE_COPY.find_jobs.description}
+                  </p>
                   <button
                     onClick={async () => {
                       if (!(await ensureAuth("/chat?mode=find_jobs"))) return;
@@ -224,7 +290,7 @@ export default function LandingPage() {
                     }}
                     className="text-xs text-text-tertiary hover:text-accent transition bg-transparent border-none cursor-pointer"
                   >
-                    or describe your experience &rarr;
+                    or tell us about your background &rarr;
                   </button>
                 </div>
               </>
@@ -262,8 +328,8 @@ export default function LandingPage() {
               icon: (
                 <path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
               ),
-              title: "Paste a URL or upload",
-              desc: "Drop any job posting link, or upload your resume to discover matching roles.",
+              title: "Start with a target or your resume",
+              desc: "Bring a specific job, or upload your resume so we can find matching roles.",
             },
             {
               icon: (

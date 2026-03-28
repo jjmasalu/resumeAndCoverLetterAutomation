@@ -265,6 +265,7 @@ def test_small_talk_stream(token: str, verbose: bool) -> TestResult:
 
             full_text = ""
             events_seen = set()
+            tool_status_events = []
             for line in resp.iter_lines():
                 if line.startswith("event: "):
                     events_seen.add(line[7:].strip())
@@ -273,13 +274,15 @@ def test_small_talk_stream(token: str, verbose: bool) -> TestResult:
                         data = json.loads(line[6:])
                         if "content" in data:
                             full_text += data["content"]
+                        if data.get("tool"):
+                            tool_status_events.append(f"{data['tool']}:{data.get('state', 'unknown')}")
                     except json.JSONDecodeError:
                         pass
 
             if not full_text:
                 return r.fail("No text content received from stream")
-            if "status" in events_seen:
-                return r.fail(f"Expected no tool status events, saw: {sorted(events_seen)}")
+            if tool_status_events:
+                return r.fail(f"Expected no tool status events, saw: {tool_status_events}")
 
             r.info(f"Events: {', '.join(sorted(events_seen)) or 'none'}")
             r.info(f"Response length: {len(full_text)} chars")

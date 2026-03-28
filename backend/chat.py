@@ -23,7 +23,7 @@ STREAM_FLUSH_PADDING = " " * 8192
 # Gemini function declarations
 SEARCH_JOBS_DECLARATION = types.FunctionDeclaration(
     name="search_jobs",
-    description="Search the web for job postings matching a query. Use when the user describes a role they want or asks to find jobs.",
+    description="Search the web for direct job postings matching a query. Results include canonical_candidate, platform, and url_kind. Prefer results where canonical_candidate=true and avoid scraping listing_page or aggregator_listing URLs.",
     parameters=types.Schema(
         type=types.Type.OBJECT,
         properties={
@@ -36,7 +36,7 @@ SEARCH_JOBS_DECLARATION = types.FunctionDeclaration(
 
 SCRAPE_JOB_DECLARATION = types.FunctionDeclaration(
     name="scrape_job",
-    description="Extract the full job description from a URL. Use after finding a job URL or when the user provides one.",
+    description="Extract the full job description from a specific job-posting URL. If the URL is a listing page, aggregator page, or blocked page, the tool will explain the blocker. Prefer canonical ATS or company-career job URLs.",
     parameters=types.Schema(
         type=types.Type.OBJECT,
         properties={
@@ -55,7 +55,7 @@ GENERATE_DOCUMENT_DECLARATION = types.FunctionDeclaration(
             "doc_type": types.Schema(type=types.Type.STRING, description="'resume' or 'cover_letter'"),
             "sections": types.Schema(
                 type=types.Type.OBJECT,
-                description="Structured content for the document. Resume: {name, title, summary, experiences: [{company, role, dates, bullets}], skills, education}. Cover letter: {name, date, company, hiring_manager, role, paragraphs: [str]}. Optional design input: theme_id in {'classic_professional','technical_compact'}.",
+                description="Structured content for the document. Resume: {name, title, summary, experiences: [{company, role, dates, bullets}], skills, education}. Cover letter: {name, date, company, hiring_manager, role, paragraphs: [str]}. Optional design inputs: theme_id in {'classic_professional','technical_compact','executive_clean','ats_minimal','modern_minimal'} and layout_strategy in {'ats_safe','balanced','executive','compact','creative_safe'}.",
             ),
         },
         required=["doc_type", "sections"],
@@ -117,20 +117,33 @@ JOB_TO_RESUME_PROMPT = """You are a career assistant helping the user create a t
 Your workflow:
 1. Ask the user what position they're interested in, or accept a job URL
 2. Use search_jobs to find the posting, or scrape_job if they give a URL
-3. Analyze the job requirements
-4. Ask the user targeted questions about their relevant experience, skills, and education — one or two questions at a time, not everything at once
-5. When you learn something important about the user, use save_user_context to remember it
-6. Once you have enough info, use generate_document to create the resume and cover letter
+3. Prefer direct ATS/company job pages where `canonical_candidate=true`. Avoid scraping `listing_page` or `aggregator_listing` results.
+4. Analyze the job requirements
+5. Ask the user targeted questions about their relevant experience, skills, and education — one or two questions at a time, not everything at once
+6. When you learn something important about the user, use save_user_context to remember it
+7. Once you have enough info, use generate_document to create the resume and cover letter
 
 Be conversational and helpful. Ask specific questions based on what the job requires. Don't ask for information you already have from the user's context.
 
 Cover letters must fit on one page. When preparing sections for generate_document, keep the cover letter to three concise body paragraphs plus a brief closing paragraph, avoid repeating resume bullets verbatim, and keep the total body around 220-300 words.
 
 If you choose a design direction, do it by selecting an approved `theme_id` inside `sections`. Available themes:
+- `ats_minimal` for strict ATS-safe simplicity with minimal styling
 - `classic_professional` for balanced, conservative presentation
 - `technical_compact` for denser technical resumes and tighter page budgets
+- `executive_clean` for leadership-oriented applications with a more formal, editorial hierarchy
+- `modern_minimal` for design-adjacent or portfolio-aware applications while staying ATS-safe
 
-Do not invent custom themes or arbitrary formatting instructions. Pick from the approved theme ids only when it adds value.
+For design-forward resume roles, if you choose `modern_minimal` or `creative_safe`, the backend may automatically produce both a Creative-safe and ATS-safe resume variant from the same content.
+
+You may also set `layout_strategy` in `sections` to one of:
+- `ats_safe`
+- `balanced`
+- `executive`
+- `compact`
+- `creative_safe`
+
+Use `layout_strategy` when you want the engine to choose the exact theme deterministically within that direction. Do not invent custom themes or arbitrary formatting instructions.
 
 IMPORTANT: When you generate a document, do NOT paste the download URL in your response. The UI will automatically show a download card. Just tell the user the document is ready and offer to make adjustments or generate additional documents."""
 
@@ -146,7 +159,8 @@ education, certifications, personal_info).
 Once the user confirms their profile, ask what kind of roles they're looking for
 (or suggest based on their profile). Then use search_jobs to find matching positions.
 
-For each promising result, use scrape_job to get the full description, then assess
+For each promising result, use scrape_job to get the full description, but prefer results where `canonical_candidate=true` and avoid `listing_page` or `aggregator_listing` URLs. If scraping reports a blocker, explain it to the user instead of pretending the job was read.
+Once you have a usable scrape, assess
 how well it matches the user's profile (0-100%). Once you have assessed the results,
 use present_job_results to show them to the user as structured cards.
 
@@ -155,7 +169,7 @@ response. The UI will automatically show a download card.
 
 When generating a cover letter, keep it to one page: three concise body paragraphs plus a brief closing paragraph, and avoid repeating the resume verbatim.
 
-If a theme choice would help, set `theme_id` in `sections` to either `classic_professional` or `technical_compact`. Do not invent other theme names."""
+If a theme choice would help, set `theme_id` in `sections` to one of `ats_minimal`, `classic_professional`, `technical_compact`, `executive_clean`, or `modern_minimal`, or set `layout_strategy` to one of `ats_safe`, `balanced`, `executive`, `compact`, or `creative_safe`. Do not invent other theme names or strategies."""
 
 FIND_JOBS_PROMPT = """You are a career assistant helping the user find jobs that match their profile.
 
@@ -164,15 +178,16 @@ Your workflow:
 2. Ask focused questions to understand their experience, skills, education, and what they're looking for
 3. Use save_user_context as you learn things about the user
 4. Once you have enough context, ask what roles they want and use search_jobs to find matching positions
-5. For each promising result, use scrape_job to get the full description, then assess how well it matches the user's profile (0-100%)
-6. Use present_job_results to show results as structured cards
-7. For selected jobs, generate tailored documents using generate_document
+5. For each promising result, use scrape_job to get the full description, but prefer results where `canonical_candidate=true` and avoid `listing_page` or `aggregator_listing` URLs. If scraping reports a blocker, tell the user what was blocked and move on to another result.
+6. Assess how well each successfully scraped result matches the user's profile (0-100%)
+7. Use present_job_results to show results as structured cards
+8. For selected jobs, generate tailored documents using generate_document
 
 Be proactive in suggesting roles based on the user's skills and experience.
 
 When generating a cover letter, keep it to one page: three concise body paragraphs plus a brief closing paragraph, and avoid repeating the resume verbatim.
 
-If a theme choice would help, set `theme_id` in `sections` to either `classic_professional` or `technical_compact`. Do not invent other theme names.
+If a theme choice would help, set `theme_id` in `sections` to one of `ats_minimal`, `classic_professional`, `technical_compact`, `executive_clean`, or `modern_minimal`, or set `layout_strategy` to one of `ats_safe`, `balanced`, `executive`, `compact`, or `creative_safe`. Do not invent other theme names or strategies.
 
 IMPORTANT: When you generate a document, do NOT paste the download URL in your
 response. The UI will automatically show a download card."""
@@ -202,6 +217,14 @@ TOOL_PHASE_LABELS = {
     "scrape_job": ("read_job_posting", "Reading job posting"),
     "save_user_context": ("save_user_context", "Saving your info"),
     "present_job_results": ("prepare_job_matches", "Preparing job matches"),
+}
+
+DOCUMENT_PROGRESS_PHASE_LABELS = {
+    "plan": "Planning",
+    "repair": "Adjusting",
+    "verify": "Verifying",
+    "render": "Rendering",
+    "save": "Saving",
 }
 
 
@@ -440,6 +463,21 @@ def _status_payload(
     return payload
 
 
+def _persisted_activity_step(payload: dict) -> dict:
+    persisted = dict(payload)
+    persisted.pop("_stream_padding", None)
+    return persisted
+
+
+def _upsert_activity_trace(trace: list[dict], payload: dict) -> None:
+    persisted = _persisted_activity_step(payload)
+    for index, existing in enumerate(trace):
+        if existing.get("id") == persisted.get("id"):
+            trace[index] = persisted
+            return
+    trace.append(persisted)
+
+
 def _router_status_payload(router: dict, state: str) -> dict:
     detail = None
     if state == "done":
@@ -468,17 +506,32 @@ def _generate_document_status_metadata(args: dict, result: dict | None, state: s
     meta = {"doc_type": doc_type}
 
     if state == "done" and result:
-        plan = result.get("document_plan") or {}
+        documents = _result_documents(result)
+        primary_result = documents[0] if documents else result
+        plan = primary_result.get("document_plan") or result.get("document_plan") or {}
         repair_history = plan.get("repair_history") or []
-        if repair_history:
+        variant_labels = [
+            str(document.get("variant_label"))
+            for document in documents
+            if document.get("variant_label")
+        ]
+        if len(documents) > 1:
+            if len(variant_labels) >= 2:
+                detail = f"{' and '.join(variant_labels[:2])} variants ready."
+            else:
+                detail = "Document variants ready."
+            meta["variant_count"] = len(documents)
+            if variant_labels:
+                meta["variant_labels"] = variant_labels
+        elif repair_history:
             detail = f"Adjusted layout to fit {result.get('page_budget', 1)} page."
             meta["repair_actions"] = [item.get("action") for item in repair_history]
         else:
             detail = f"{label.replace('Generating ', '').capitalize()} ready."
-        if result.get("theme_id"):
-            meta["theme_id"] = result["theme_id"]
-        if result.get("page_budget") is not None:
-            meta["page_budget"] = result["page_budget"]
+        if primary_result.get("theme_id"):
+            meta["theme_id"] = primary_result["theme_id"]
+        if primary_result.get("page_budget") is not None:
+            meta["page_budget"] = primary_result["page_budget"]
         verification = plan.get("verification") or {}
         if verification.get("status"):
             meta["verification_status"] = verification["status"]
@@ -490,6 +543,35 @@ def _generate_document_status_metadata(args: dict, result: dict | None, state: s
         "detail": detail,
         "meta": meta,
     }
+
+
+def _document_progress_status_payload(args: dict, progress_event: dict) -> dict:
+    doc_type = str(args.get("doc_type", "document"))
+    phase = str(progress_event.get("phase", "progress"))
+    state = str(progress_event.get("state", "running"))
+    doc_label = {
+        "resume": "resume",
+        "cover_letter": "cover letter",
+    }.get(doc_type, "document")
+    phase_label = DOCUMENT_PROGRESS_PHASE_LABELS.get(
+        phase,
+        phase.replace("_", " ").title(),
+    )
+    detail = progress_event.get("detail")
+    meta = {"doc_type": doc_type}
+    raw_meta = progress_event.get("meta")
+    if isinstance(raw_meta, dict):
+        meta.update(raw_meta)
+
+    return _status_payload(
+        step_id=f"generate_document:{doc_type}:{phase}",
+        phase=f"generate_{doc_type}_{phase}",
+        label=f"{phase_label} {doc_label}",
+        state=state,
+        tool="generate_document",
+        detail=detail,
+        meta=meta,
+    )
 
 
 def _tool_status_payload(
@@ -521,10 +603,22 @@ def _tool_status_payload(
 
     if state == "done":
         if name == "search_jobs" and isinstance(result, list):
+            canonical_count = sum(
+                1
+                for item in result
+                if isinstance(item, dict) and item.get("canonical_candidate")
+            )
             detail = f"Found {len(result)} potential job posting{'s' if len(result) != 1 else ''}."
-            meta = {"result_count": len(result)}
+            if canonical_count:
+                detail += f" {canonical_count} look like direct postings."
+            meta = {"result_count": len(result), "canonical_count": canonical_count}
         elif name == "scrape_job" and isinstance(result, dict) and "error" not in result:
             detail = "Captured the job description."
+            if result.get("quality") == "medium":
+                detail = "Captured the job description with lower confidence."
+            blockers = result.get("blockers") or []
+            if blockers:
+                meta = {"blockers": blockers}
         elif name == "save_user_context":
             category = args.get("category")
             detail = f"Saved {str(category).replace('_', ' ')} to memory." if category else "Saved new profile details."
@@ -548,11 +642,211 @@ def _tool_status_payload(
     )
 
 
+def _result_documents(result: dict | None) -> list[dict]:
+    if not isinstance(result, dict):
+        return []
+    documents = result.get("documents")
+    if isinstance(documents, list):
+        return [
+            item for item in documents
+            if isinstance(item, dict) and item.get("document_id")
+        ]
+    if result.get("document_id"):
+        return [result]
+    return []
+
+
+def _tool_run_summary(executed_tools: list[dict]) -> str:
+    lines: list[str] = []
+    for item in executed_tools:
+        name = item.get("name", "tool")
+        state = item.get("state", "done")
+        result = item.get("result")
+        if name == "generate_document" and isinstance(result, dict):
+            documents = _result_documents(result)
+            filename = result.get("filename")
+            doc_type = str(result.get("doc_type", "document")).replace("_", " ")
+            if state == "failed":
+                detail = result.get("error", "generation failed")
+            elif len(documents) > 1:
+                labels = [
+                    str(document.get("variant_label"))
+                    for document in documents
+                    if document.get("variant_label")
+                ]
+                if labels:
+                    detail = f"created {doc_type} variants {' and '.join(labels)}"
+                else:
+                    detail = f"created {len(documents)} {doc_type} variants"
+            elif filename:
+                detail = f"created {doc_type} file {filename}"
+            else:
+                detail = f"generated {doc_type}"
+        elif name == "present_job_results" and isinstance(result, dict):
+            count = len(result.get("results", []))
+            detail = f"prepared {count} job match card{'s' if count != 1 else ''}"
+        elif name == "search_jobs" and isinstance(result, list):
+            count = len(result)
+            detail = f"found {count} search result{'s' if count != 1 else ''}"
+        elif name == "scrape_job" and isinstance(result, dict):
+            detail = result.get("error", "scraped the job posting") if state == "failed" else "scraped the job posting"
+        elif name == "save_user_context" and isinstance(result, dict):
+            category = item.get("args", {}).get("category")
+            detail = f"saved {str(category).replace('_', ' ')} to memory" if category else "saved user context"
+        else:
+            detail = "completed"
+        lines.append(f"- {name}: {detail}")
+    return "\n".join(lines)
+
+
+def _deterministic_tool_only_fallback(executed_tools: list[dict]) -> str:
+    successful_documents = [
+        document
+        for item in executed_tools
+        if item.get("name") == "generate_document"
+        and item.get("state") == "done"
+        and isinstance(item.get("result"), dict)
+        for document in _result_documents(item.get("result"))
+    ]
+    failed_documents = [
+        item for item in executed_tools
+        if item.get("name") == "generate_document"
+        and item.get("state") == "failed"
+    ]
+
+    if successful_documents:
+        resume_variants = [
+            str(document.get("variant_label"))
+            for document in successful_documents
+            if document.get("doc_type") == "resume" and document.get("variant_label")
+        ]
+        doc_labels = [
+            str(document.get("doc_type", "document")).replace("_", " ")
+            for document in successful_documents
+        ]
+        has_cover_letter = "cover letter" in doc_labels
+        has_resume = "resume" in doc_labels
+        if len(resume_variants) >= 2 and has_cover_letter:
+            return "Your ATS-safe and Creative-safe resumes plus your cover letter are ready. The download cards are below. If you want revisions, tell me what to change."
+        if len(resume_variants) >= 2:
+            return "Your ATS-safe and Creative-safe resumes are ready. The download cards are below. If you want revisions, tell me what to change."
+        if has_cover_letter and has_resume:
+            return "Your resume and cover letter are ready. The download cards are below. If you want any revisions, tell me what to change."
+        if len(doc_labels) == 1:
+            return f"Your {doc_labels[0]} is ready. The download card is below. If you want revisions, tell me what to change."
+        return "Your documents are ready. The download cards are below. If you want revisions, tell me what to change."
+
+    if failed_documents:
+        error = failed_documents[-1].get("result", {}).get("error")
+        if error:
+            return f"I hit an issue while generating the document: {error}"
+        return "I hit an issue while generating the document. Try again or tell me what to adjust."
+
+    last_presented_jobs = next(
+        (
+            item for item in reversed(executed_tools)
+            if item.get("name") == "present_job_results" and item.get("state") == "done"
+        ),
+        None,
+    )
+    if last_presented_jobs and isinstance(last_presented_jobs.get("result"), dict):
+        count = len(last_presented_jobs["result"].get("results", []))
+        return f"I found {count} matching job{'s' if count != 1 else ''} and displayed them below. Tell me which one you want to pursue."
+
+    if any(item.get("name") == "scrape_job" and item.get("state") == "done" for item in executed_tools):
+        return "I reviewed the job posting. If you want, I can tailor your resume and cover letter for it."
+
+    if any(item.get("name") == "save_user_context" and item.get("state") == "done" for item in executed_tools):
+        return "I saved that information to your profile memory so I can use it in future applications."
+
+    return "I finished that step. Tell me if you want me to continue with the next part."
+
+
+def _generate_tool_only_followup_text(
+    *,
+    full_system: str,
+    contents: list[types.Content],
+    executed_tools: list[dict],
+) -> str:
+    summary = _tool_run_summary(executed_tools)
+    completion_prompt = types.Content(
+        role="user",
+        parts=[types.Part.from_text(text=f"""Tool execution for this turn is complete.
+
+Write the final assistant reply to the user now.
+- Do not call tools.
+- Do not mention internal routing or hidden mechanics.
+- Refer to files or job cards as already shown in the UI instead of pasting URLs.
+- Keep it concise and action-oriented.
+
+Tool summary:
+{summary}
+""")],
+    )
+    try:
+        response = gemini_client.models.generate_content(
+            model=MODEL,
+            contents=[*contents, completion_prompt],
+            config=types.GenerateContentConfig(
+                system_instruction=full_system,
+                temperature=0.3,
+            ),
+        )
+        text = _response_text(response).strip()
+        if text:
+            return text
+    except Exception as error:
+        logger.warning("tool-only follow-up generation failed: %s", error)
+
+    return _deterministic_tool_only_fallback(executed_tools)
+
+
+def _document_sections_from_args(args: dict) -> dict:
+    sections = args.get("sections")
+    return sections if isinstance(sections, dict) else {}
+
+
+def _ensure_document_job_record(
+    *,
+    user_id: str,
+    conversation_id: str,
+    args: dict,
+) -> str | None:
+    sections = _document_sections_from_args(args)
+    role = str(sections.get("role") or sections.get("title") or "").strip()
+    company = str(sections.get("company") or "").strip() or None
+    doc_type = str(args.get("doc_type", "document")).replace("_", " ").strip()
+    title = role or f"Direct {doc_type} generation"
+    if company and company.lower() not in title.lower():
+        title = f"{title} at {company}"
+
+    summary = str(sections.get("summary") or "").strip()
+    description_lines = [f"Direct {doc_type} generation request"]
+    if role:
+        description_lines.append(f"Role: {role}")
+    if company:
+        description_lines.append(f"Company: {company}")
+    if summary:
+        description_lines.append(f"Summary: {summary[:500]}")
+
+    job_data = supabase.table("jobs").insert({
+        "conversation_id": conversation_id,
+        "user_id": user_id,
+        "title": title,
+        "company": company,
+        "description_md": "\n".join(description_lines),
+    }).execute()
+    if job_data.data:
+        return job_data.data[0]["id"]
+    return None
+
+
 async def _execute_tool(
     function_call: types.FunctionCall,
     user_id: str,
     conversation_id: str,
     job_id: str | None,
+    progress_callback=None,
 ) -> tuple[dict, str | None]:
     """Execute a Gemini function call and return result + optional updated job_id."""
     name = function_call.name
@@ -570,8 +864,8 @@ async def _execute_tool(
             job_data = supabase.table("jobs").insert({
                 "conversation_id": conversation_id,
                 "user_id": user_id,
-                "title": args.get("url", ""),
-                "url": args.get("url", ""),
+                "title": result.get("title") or args.get("url", ""),
+                "url": result.get("canonical_url") or result.get("url") or args.get("url", ""),
                 "description_md": result.get("description_md", ""),
             }).execute()
             if job_data.data:
@@ -581,19 +875,29 @@ async def _execute_tool(
             logger.warning("tool_result scrape_job error=%s", result["error"])
     elif name == "generate_document":
         if not job_id:
-            result = {"error": "No job has been scraped yet in this conversation."}
-            logger.warning("tool_result generate_document no job_id")
-        else:
-            result = await tools.generate_document(
-                doc_type=args.get("doc_type", "resume"),
-                sections=args.get("sections", {}),
+            job_id = _ensure_document_job_record(
                 user_id=user_id,
-                job_id=job_id,
+                conversation_id=conversation_id,
+                args=args,
             )
-            if "error" in result:
-                logger.error("tool_result generate_document error=%s", result["error"])
+            if job_id:
+                logger.info("tool_result generate_document created synthetic job_id=%s", job_id[:8])
             else:
-                logger.info("tool_result generate_document doc_id=%s", result.get("document_id", "?")[:8])
+                logger.warning("tool_result generate_document no job_id")
+                return {"error": "Unable to create a job record for this document request."}, job_id
+
+        result = await tools.generate_document(
+            doc_type=args.get("doc_type", "resume"),
+            sections=_document_sections_from_args(args),
+            user_id=user_id,
+            job_id=job_id,
+            progress_callback=progress_callback,
+            conversation_id=conversation_id,
+        )
+        if "error" in result:
+            logger.error("tool_result generate_document error=%s", result["error"])
+        else:
+            logger.info("tool_result generate_document doc_id=%s", result.get("document_id", "?")[:8])
     elif name == "save_user_context":
         result = await tools.save_user_context(
             user_id=user_id,
@@ -629,17 +933,15 @@ async def stream_chat(
     is_first_exchange = len(history) == 0
     context_prompt = _build_context_prompt(user_id)
 
-    yield ServerSentEvent(
-        data=json.dumps(
-            _status_payload(
-                step_id="understanding_request",
-                phase="understanding_request",
-                label="Understanding request",
-                state="running",
-            )
-        ),
-        event="status",
+    activity_trace: list[dict] = []
+    initial_status = _status_payload(
+        step_id="understanding_request",
+        phase="understanding_request",
+        label="Understanding request",
+        state="running",
     )
+    _upsert_activity_trace(activity_trace, initial_status)
+    yield ServerSentEvent(data=json.dumps(initial_status), event="status")
     await asyncio.sleep(0)
     router = await asyncio.to_thread(
         _analyze_turn,
@@ -649,10 +951,9 @@ async def stream_chat(
         history=history,
     )
 
-    yield ServerSentEvent(
-        data=json.dumps(_router_status_payload(router, "done")),
-        event="status",
-    )
+    router_done_status = _router_status_payload(router, "done")
+    _upsert_activity_trace(activity_trace, router_done_status)
+    yield ServerSentEvent(data=json.dumps(router_done_status), event="status")
     await asyncio.sleep(0)
 
     supabase.table("messages").insert({
@@ -714,6 +1015,7 @@ If tools_allowed is false, do not call any tools on this turn. Answer directly o
     job_id = existing_jobs.data[0]["id"] if existing_jobs.data else None
 
     full_response = ""
+    executed_tools: list[dict] = []
     max_tool_rounds = 5
 
     for tool_round in range(max_tool_rounds):
@@ -752,40 +1054,87 @@ If tools_allowed is false, do not call any tools on this turn. Answer directly o
                     fc = part.function_call
                     function_call_content = chunk.candidates[0].content
 
-                    yield ServerSentEvent(
-                        data=json.dumps(
-                            _tool_status_payload(
-                                name=fc.name,
-                                args=dict(fc.args) if fc.args else {},
-                                state="running",
-                            )
-                        ),
-                        event="status",
+                    running_status = _tool_status_payload(
+                        name=fc.name,
+                        args=dict(fc.args) if fc.args else {},
+                        state="running",
                     )
+                    _upsert_activity_trace(activity_trace, running_status)
+                    yield ServerSentEvent(data=json.dumps(running_status), event="status")
                     await asyncio.sleep(0)
 
-                    result, job_id = await _execute_tool(fc, user_id, conversation_id, job_id)
+                    if fc.name == "generate_document":
+                        progress_queue: asyncio.Queue[dict] = asyncio.Queue()
+                        loop = asyncio.get_running_loop()
+
+                        def progress_callback(event: dict) -> None:
+                            loop.call_soon_threadsafe(progress_queue.put_nowait, event)
+
+                        tool_task = asyncio.create_task(
+                            _execute_tool(
+                                fc,
+                                user_id,
+                                conversation_id,
+                                job_id,
+                                progress_callback=progress_callback,
+                            )
+                        )
+
+                        while True:
+                            if tool_task.done() and progress_queue.empty():
+                                break
+                            try:
+                                progress_event = await asyncio.wait_for(
+                                    progress_queue.get(),
+                                    timeout=0.1,
+                                )
+                            except asyncio.TimeoutError:
+                                continue
+
+                            progress_status = _document_progress_status_payload(
+                                dict(fc.args) if fc.args else {},
+                                progress_event,
+                            )
+                            _upsert_activity_trace(activity_trace, progress_status)
+                            yield ServerSentEvent(
+                                data=json.dumps(progress_status),
+                                event="status",
+                            )
+                            await asyncio.sleep(0)
+
+                        result, job_id = await tool_task
+                    else:
+                        result, job_id = await _execute_tool(
+                            fc,
+                            user_id,
+                            conversation_id,
+                            job_id,
+                        )
                     tool_state = "failed" if isinstance(result, dict) and "error" in result else "done"
 
-                    yield ServerSentEvent(
-                        data=json.dumps(
-                            _tool_status_payload(
-                                name=fc.name,
-                                args=dict(fc.args) if fc.args else {},
-                                state=tool_state,
-                                result=result,
-                            )
-                        ),
-                        event="status",
+                    completed_status = _tool_status_payload(
+                        name=fc.name,
+                        args=dict(fc.args) if fc.args else {},
+                        state=tool_state,
+                        result=result,
                     )
+                    executed_tools.append({
+                        "name": fc.name,
+                        "args": dict(fc.args) if fc.args else {},
+                        "state": tool_state,
+                        "result": result,
+                    })
+                    _upsert_activity_trace(activity_trace, completed_status)
+                    yield ServerSentEvent(data=json.dumps(completed_status), event="status")
                     await asyncio.sleep(0)
 
-                    if fc.name == "generate_document" and "document_id" in result:
-                        yield ServerSentEvent(
-                            data=json.dumps(result),
-                            event="document",
-                        )
-                        await asyncio.sleep(0)
+                    if fc.name == "generate_document":
+                        for document in _result_documents(result if isinstance(result, dict) else None):
+                            yield ServerSentEvent(
+                                data=json.dumps(document),
+                                event="document",
+                            )
+                            await asyncio.sleep(0)
 
                     # Emit job_result events for present_job_results
                     if fc.name == "present_job_results":
@@ -820,6 +1169,26 @@ If tools_allowed is false, do not call any tools on this turn. Answer directly o
         if not has_function_call:
             break
 
+    if not full_response.strip() and executed_tools:
+        logger.warning(
+            "stream conv=%s had %d tool-only round(s) with no assistant text; generating follow-up",
+            conversation_id[:8],
+            len(executed_tools),
+        )
+        followup_text = await asyncio.to_thread(
+            _generate_tool_only_followup_text,
+            full_system=full_system,
+            contents=contents,
+            executed_tools=executed_tools,
+        )
+        if followup_text:
+            full_response = followup_text
+            yield ServerSentEvent(
+                data=json.dumps({"content": followup_text}),
+                event="message",
+            )
+            await asyncio.sleep(0)
+
     # Save assistant response
     if full_response:
         logger.info("stream done conv=%s response=%d chars", conversation_id[:8], len(full_response))
@@ -827,6 +1196,9 @@ If tools_allowed is false, do not call any tools on this turn. Answer directly o
             "conversation_id": conversation_id,
             "role": "assistant",
             "content": full_response,
+            "metadata": {
+                "activity_trace": activity_trace,
+            },
         }).execute()
 
         # Auto-title: update conversation title from first user message if still default

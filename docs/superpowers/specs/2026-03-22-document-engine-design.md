@@ -47,6 +47,7 @@ the product, not a prompt that happens to end in a `.docx`.
 The model is allowed to choose from a controlled catalog:
 
 - `theme_id`
+- `layout_strategy`
 - density level
 - emphasis strategy
 - section priority
@@ -129,8 +130,17 @@ Implemented now:
 
 - deterministic `DocumentPlan` construction for `resume` and `cover_letter`
 - approved theme catalog with:
+  - `ats_minimal`
   - `classic_professional`
   - `technical_compact`
+  - `executive_clean`
+  - `modern_minimal`
+- deterministic `layout_strategy` support with:
+  - `ats_safe`
+  - `balanced`
+  - `executive`
+  - `compact`
+  - `creative_safe`
 - normalization and compaction rules for:
   - resume summary
   - resume skills
@@ -142,6 +152,11 @@ Implemented now:
 - local render verification tooling on macOS via LibreOffice -> PDF -> PNG
 - named regression fixtures plus a local regression runner for fixture output generation
 - backend contract that allows the model to select only approved `theme_id` values
+- deterministic leadership-aware theme selection for balanced executive-style documents
+- deterministic ATS-safe selection for simplicity-first roles and workflows
+- theme-specific rendering differences that stay within safe flow-layout primitives
+- deterministic design-role selection for visually stronger but still ATS-safe documents
+- dual-output resume variants for design-forward roles when the creative-safe and ATS-safe renders meaningfully differ
 
 Not implemented yet:
 
@@ -153,7 +168,7 @@ Not implemented yet:
 
 This means the engine has moved from design-only into an initial controlled
 production baseline. Planning, heuristic verification, and bounded repair are in
-place; rendered verification and richer theme coverage are the next major phase.
+place; rendered verification and broader theme coverage are the next major phase.
 
 ## Engine Architecture
 
@@ -223,9 +238,10 @@ Theme choice should be based on:
 
 But the available outputs are constrained to audited options, for example:
 
+- `ats_minimal`
+- `modern_minimal`
 - `technical_compact`
 - `executive_clean`
-- `modern_minimal`
 - `classic_professional`
 
 Each theme has deterministic variants:
@@ -235,6 +251,28 @@ Each theme has deterministic variants:
 - `spacious`
 
 The model chooses from these; it does not invent a new theme in production.
+
+When the exact theme should remain engine-controlled, the model can choose a
+`layout_strategy` instead of a `theme_id`. For example:
+
+- `ats_safe`
+- `balanced`
+- `executive`
+- `compact`
+- `creative_safe`
+
+The engine then resolves the concrete theme deterministically within that
+strategy.
+
+For design-forward resume roles, the backend may emit two audited outputs from
+the same generation request:
+
+- `Creative-safe`
+- `ATS-safe`
+
+This is a backend decision, not an up-front user choice. The intended UX is to
+show both download cards inline after generation so the user can pick the right
+submission variant without managing theme settings first.
 
 ## Stage 3: Composition
 

@@ -128,3 +128,42 @@ export async function apiUpload<T>(path: string, file: File): Promise<T> {
   }
   return res.json();
 }
+
+export async function downloadGeneratedDocument(
+  documentId: string,
+  filename: string
+) {
+  const response = await apiFetch(`/documents/${documentId}/download`, {
+    headers: {},
+  });
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(objectUrl);
+}
+
+export interface RegeneratedDocument {
+  document_id: string;
+  doc_type: string;
+  filename: string;
+  download_url: string;
+  theme_id?: string | null;
+  variant_key?: string | null;
+  variant_label?: string | null;
+  variant_group_id?: string | null;
+  can_regenerate?: boolean;
+}
+
+export async function regenerateGeneratedDocument(documentId: string) {
+  return apiJson<{
+    replaced_document_id: string;
+    document: RegeneratedDocument;
+  }>(`/generated-documents/${documentId}/regenerate`, {
+    method: "POST",
+  });
+}

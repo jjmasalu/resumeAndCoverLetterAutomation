@@ -92,10 +92,11 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const pathname = request.nextUrl.pathname;
+  const isRootRoute = pathname === "/";
   const isLoginRoute = pathname.startsWith("/login");
   const isAuthRoute = pathname.startsWith("/auth");
   const isAccessCodeRoute = pathname.startsWith("/access-code");
-  const isPublic = pathname === "/" || isLoginRoute || isAuthRoute;
+  const isPublic = isRootRoute || isLoginRoute || isAuthRoute;
 
   if (!user && !isPublic) {
     const loginUrl = new URL("/login", request.url);
@@ -114,7 +115,7 @@ export async function updateSession(request: NextRequest) {
     console.error("Failed to evaluate team access gate", error);
   }
 
-  if (teamAccess.requiresCode && !isAccessCodeRoute && !isAuthRoute) {
+  if (teamAccess.requiresCode && !isAccessCodeRoute && !isAuthRoute && !isRootRoute) {
     const redirectPath = buildAccessCodePath(
       buildReturnTo(request),
       teamAccess.reason

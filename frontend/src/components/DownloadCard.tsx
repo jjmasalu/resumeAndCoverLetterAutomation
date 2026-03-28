@@ -1,19 +1,56 @@
+"use client";
+
+import { useState } from "react";
+import { downloadGeneratedDocument } from "@/lib/api";
+
 interface DownloadCardProps {
   docType: string;
-  downloadUrl: string;
+  documentId: string;
+  filename: string;
+  variantLabel?: string | null;
+  embedded?: boolean;
+  canRegenerate?: boolean;
+  onRegenerate?: () => Promise<void> | void;
+  regenerating?: boolean;
 }
 
-export default function DownloadCard({ docType, downloadUrl }: DownloadCardProps) {
+export default function DownloadCard({
+  docType,
+  documentId,
+  filename,
+  variantLabel,
+  embedded = false,
+  canRegenerate = false,
+  onRegenerate,
+  regenerating = false,
+}: DownloadCardProps) {
   const label = docType === "resume" ? "Resume" : "Cover Letter";
-  const fileName = `${docType || "document"}.docx`;
-  const href = downloadUrl
-    ? `${downloadUrl}&download=${encodeURIComponent(fileName)}`
-    : "#";
+  const variantHint =
+    variantLabel === "ATS-safe"
+      ? "Best for recruiter systems and ATS."
+      : variantLabel === "Creative-safe"
+        ? "Best for design-forward applications."
+        : null;
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownload = async () => {
+    if (downloading) return;
+    try {
+      setDownloading(true);
+      await downloadGeneratedDocument(documentId, filename);
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   return (
-    <div className="ml-9 mb-4 flex items-center gap-3 p-3 bg-bg-secondary border border-border rounded-lg border-l-2 border-l-accent">
+    <div
+      className={`flex items-center gap-3 rounded-lg border border-border border-l-2 border-l-accent bg-bg-secondary p-3 ${
+        embedded ? "" : "ml-9 mb-4"
+      }`}
+    >
       <svg
-        className="w-6 h-6 text-accent flex-shrink-0"
+        className="h-6 w-6 flex-shrink-0 text-accent"
         fill="none"
         stroke="currentColor"
         viewBox="0 0 24 24"
@@ -26,14 +63,33 @@ export default function DownloadCard({ docType, downloadUrl }: DownloadCardProps
         />
       </svg>
       <div>
-        <p className="text-sm font-medium text-text-primary">{label} ready</p>
-        <a
-          href={href}
-          download={fileName}
-          className="text-xs text-accent hover:underline"
-        >
-          Download .docx
-        </a>
+        <p className="text-sm font-medium text-text-primary">
+          {variantLabel ? `${label} · ${variantLabel}` : `${label} ready`}
+        </p>
+        <p className="max-w-[28rem] truncate text-xs text-text-tertiary">{filename}</p>
+        {variantHint && (
+          <p className="text-[11px] text-text-tertiary">{variantHint}</p>
+        )}
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={handleDownload}
+            disabled={downloading || regenerating}
+            className="text-left text-xs text-accent transition hover:underline disabled:cursor-wait disabled:opacity-70"
+          >
+            {downloading ? "Preparing download..." : "Download file"}
+          </button>
+          {canRegenerate && onRegenerate && (
+            <button
+              type="button"
+              onClick={() => void onRegenerate()}
+              disabled={downloading || regenerating}
+              className="text-left text-xs text-text-tertiary transition hover:text-accent hover:underline disabled:cursor-wait disabled:opacity-70"
+            >
+              {regenerating ? "Regenerating..." : "Regenerate this version"}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

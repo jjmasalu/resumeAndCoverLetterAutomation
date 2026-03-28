@@ -14,6 +14,7 @@ export interface ActivityStep {
 
 interface ActivityTimelineProps {
   steps: ActivityStep[];
+  defaultExpanded?: boolean;
 }
 
 function stateClasses(state: ActivityStep["state"]) {
@@ -41,8 +42,11 @@ function stateClasses(state: ActivityStep["state"]) {
   };
 }
 
-export default function ActivityTimeline({ steps }: ActivityTimelineProps) {
-  const [expanded, setExpanded] = useState(true);
+export default function ActivityTimeline({
+  steps,
+  defaultExpanded = true,
+}: ActivityTimelineProps) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
 
   useEffect(() => {
     if (steps.some((step) => step.state === "running")) {

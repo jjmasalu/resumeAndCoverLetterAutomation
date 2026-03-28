@@ -1,0 +1,33 @@
+{
+  "id": "cover_letter_ats_minimal_balanced",
+  "doc_type": "cover_letter",
+  "input": {
+    "name": "Taylor Brooks",
+    "company": "Northview Health",
+    "role": "Operations Coordinator",
+    "layout_strategy": "ats_safe",
+    "paragraphs": [
+      "I am excited to apply for the Operations Coordinator role at Northview Health.",
+      "I have experience supporting scheduling, documentation, and reporting processes across operations teams.",
+      "I would bring strong organization, communication, and compliance-focused execution to the role.",
+      "Thank you for your time and consideration."
+    ]
+  },
+  "expected": {
+    "theme_id": "ats_minimal",
+    "page_budget": 1,
+    "verification_status": "passed",
+    "attempt_count": 1,
+    "repair_actions": [],
+    "layout_metrics": {
+      "paragraph_count": 4
+    },
+    "required_text": [
+      "Hiring Manager",
+      "Northview Health",
+      "Re: Operations Coordinator",
+      "Sincerely,",
+      "Taylor Brooks"
+    ]
+  }
+}

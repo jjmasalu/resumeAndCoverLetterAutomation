@@ -1,0 +1,61 @@
+{
+  "id": "resume_executive_balanced",
+  "doc_type": "resume",
+  "input": {
+    "name": "Morgan Lee",
+    "title": "Staff Platform Engineer",
+    "summary": "Staff platform engineer focused on backend reliability, mentoring, and platform strategy across product and infrastructure teams.",
+    "skills": {
+      "Languages": ["Python", "Go", "SQL"],
+      "Platforms": ["AWS", "GCP", "Cloud Run"],
+      "Leadership": ["Architecture reviews", "Mentoring", "Reliability programs"]
+    },
+    "education": [
+      {
+        "degree": "BSc Computer Science",
+        "institution": "University of Waterloo",
+        "dates": "2014-2018"
+      }
+    ],
+    "experiences": [
+      {
+        "company": "Northstar Systems",
+        "role": "Staff Platform Engineer",
+        "dates": "2022 to Present",
+        "bullets": [
+          "Led platform reliability initiatives across shared backend services.",
+          "Mentored engineers and drove architecture reviews for high-risk changes."
+        ]
+      },
+      {
+        "company": "Atlas Data",
+        "role": "Senior Backend Engineer",
+        "dates": "2019 to 2022",
+        "bullets": [
+          "Built shared APIs and internal tooling used across multiple product teams.",
+          "Improved operational safety and release quality for core services."
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "theme_id": "executive_clean",
+    "page_budget": 1,
+    "verification_status": "passed",
+    "attempt_count": 1,
+    "repair_actions": [],
+    "layout_metrics": {
+      "experience_count": 2,
+      "bullet_count": 4
+    },
+    "required_text": [
+      "Morgan Lee",
+      "Staff Platform Engineer",
+      "SUMMARY",
+      "EXPERIENCE",
+      "SKILLS",
+      "EDUCATION",
+      "Northstar Systems"
+    ]
+  }
+}
