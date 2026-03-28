@@ -69,6 +69,14 @@ gcloud run services update resume-api-team \
   --update-env-vars FRONTEND_URL=<frontend-url>
 ```
 
+If you need multiple frontend deployments active against the same backend, also set:
+
+```bash
+gcloud run services update resume-api-team \
+  --region us-east1 \
+  --update-env-vars=^##^FRONTEND_URL=<primary-frontend-url>##FRONTEND_URLS=<secondary-frontend-url-1>,<secondary-frontend-url-2>
+```
+
 ## 3. Enable the Shared Team Access Code
 
 Paste [001_enable_initial_code.sql](/Users/aham/projects/dev/resumeAndCoverLetterAutomation/supabase/sql/team_access/001_enable_initial_code.sql)

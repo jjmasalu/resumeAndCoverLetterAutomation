@@ -24,7 +24,8 @@ cp backend/.env.example backend/.env
 | `GEMINI_API_KEY` | https://aistudio.google.com/apikey |
 | `TAVILY_API_KEY` | https://app.tavily.com |
 | `FIRECRAWL_API_KEY` | https://www.firecrawl.dev |
-| `FRONTEND_URL` | `http://localhost:3000` (local) or your Vercel URL |
+| `FRONTEND_URL` | Primary frontend URL, e.g. `http://localhost:3000` locally or your main Vercel URL |
+| `FRONTEND_URLS` | Optional comma-separated extra frontend origins to allow, e.g. a second Vercel URL |
 
 ### Frontend (`frontend/.env.local`)
 
